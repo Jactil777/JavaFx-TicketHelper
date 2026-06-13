@@ -1,0 +1,291 @@
+<div align="center">
+
+# 🚄 JavaFx-TicketHelper
+
+**A 12306 Ticket Booking Tool Built with Java 17 + JavaFX**
+
+[中文](README.md)
+
+> This project is for technical learning and communication only. Commercial use or high-frequency abuse is not recommended.
+
+</div>
+
+---
+
+## Table of Contents
+
+- [Project Description](#-project-description)
+- [Tech Stack](#️-tech-stack)
+- [Features](#-features)
+- [Quick Start](#-quick-start)
+- [Packaging Windows Installer](#-packaging-windows-installer)
+- [Project Structure](#-project-structure)
+- [Development Guide](#-development-guide)
+- [Privacy](#-privacy)
+- [Contributing](#-contributing)
+- [Security Notes](#️-security-notes)
+- [License](#-license)
+- [中文](#chinese)
+
+---
+
+## 📖 Project Description
+
+`JavaFx-TicketHelper` is a JavaFX desktop ticket-booking tool for the 12306 railway system. It integrates ticket booking, order management, waitlist, and multi-channel notifications. The design is inspired by Bypass, aiming to provide a locally runnable, low-dependency ticket booking solution.
+
+| Item | Details |
+|------|------|
+| **Platform** | Windows |
+| **License** | MIT License |
+| **Author** | jactil |
+
+---
+
+## 🛠️ Tech Stack
+
+| Category | Technology |
+|:---:|:---|
+| Language | Java 17 |
+| UI | JavaFX 17.0.8 |
+| Build | Maven |
+| JSON | Jackson |
+| HTTP | OkHttp |
+| Logging | SLF4J + Logback |
+| Target Platform | Windows 10 / 11 |
+
+---
+
+## ✨ Features
+
+### 1. Login & Account Management
+
+| Feature | Status | Implementation |
+|:---|:---:|:---|
+| Register 12306 account (embedded browser) | ✅ | JavaFX `WebView` loads `https://kyfw.12306.cn/otn/regist/init` |
+| Forgot password (embedded browser) | ✅ | `WebView` loads `https://kyfw.12306.cn/otn/forgetPassword/init` |
+| Account password login | ✅ | Multi-step: checkLoginVerify → getMessageCode (SMS) → RSA public key encrypt password → submit login with SMS code |
+| Phone SMS verification login | ✅ | Simulate web login with phone / SMS code / device info to obtain session Cookie |
+| Open 12306 website without re-login | ✅ | `WebView` loads official site with Cookie/Token pre-injected from OkHttp |
+
+### 2. Core Ticket Booking
+
+| Feature | Status | Implementation |
+|:---|:---:|:---|
+| Ticket booking page (train / date / seat filter) | ✅ | OkHttp queries API → Jackson parses JSON → `TableView` displays → `ComboBox/CheckBox` filters |
+| Waitlist order page | ✅ | Query waitlist API, display in `TableView`; support pay / cancel / refund actions |
+| Order management (pending / completed) | ✅ | Query order API, tabbed display; support pay / cancel / refund / reschedule actions |
+| Auto-submit order (preset passenger / seat) | ✅ | Store passenger info locally, auto-submit with passenger / seat info when ticket found |
+| Multi-task booking (single / multi / multi-station) | ✅ | `ThreadPoolExecutor` for concurrent booking, shared login state (Cookie/Token) |
+| CDN speed test / server optimization | ❌ N/A | Personal version uses official domain directly, no CDN optimization needed |
+
+### 3. Notifications & Alerts
+
+| Feature | Status | Implementation |
+|:---|:---:|:---|
+| Windows tray popup + sound alert | ✅ | `TrayNotification` for system tray + `AudioClip` for local audio playback |
+| HTTP push notification (POST) | ✅ | OkHttp sends GET/POST to user-configured URL with custom params / headers |
+| Email notification (SMTP) | ✅ | JavaMail API for SMTP, supports custom sender / recipient / SSL encryption |
+| WeChat / QQ notification | ✅ | Server Chan / WeCom robot API for WeChat; third-party robot API for QQ |
+
+### 4. Settings & Utilities
+
+| Feature | Status | Implementation |
+|:---|:---:|:---|
+| Server time synchronization | ✅ | OkHttp requests 12306 API, reads `Date` response header to calibrate local clock |
+| Proxy settings | ✅ | OkHttp HTTP/SOCKS proxy config, JavaFX UI for proxy address / port input |
+| Check for updates | ✅ | On startup, request update URL (GitHub Releases / custom server), compare version |
+| Announcements / sponsor author | ✅ | Load local / remote HTML announcements on startup; popup with QR code / donation link |
+| Create desktop shortcut | ✅ | Generate `.lnk` shortcut on Windows pointing to the program `.exe` |
+| Log output / view logs | ✅ | Logback for logging, `TextArea` for real-time display; log directory open button |
+| Ticket settings (seat / passenger / auto-waitlist) | ✅ | `CheckBox/ComboBox/TextField` for config, serialized to local JSON, loaded on startup |
+| Auto payment | ⚠️ Risky | Simulates Alipay web payment flow; **recommend "payment reminder" only, not auto-payment** |
+
+---
+
+## 🚀 Quick Start
+
+### Requirements
+
+- **JDK 17** (must include `jpackage`)
+- **Maven 3.6+**
+- **Windows 10 / 11**
+
+> This project uses Maven to import JavaFX dependencies with `classifier=win`. Please use JDK 17, do not run directly with JDK 8.
+
+### Run
+
+```bash
+git clone https://github.com/Jactil777/JavaFx-TicketHelper.git
+cd JavaFx-TicketHelper
+mvn exec:java
+```
+
+You can also open the project in IntelliJ IDEA and run via the Maven panel:
+
+```
+Plugins -> exec -> exec:java
+```
+
+> **Running in IDE**: Use `com.jactil.javafx.tickethelper.Launcher` as the main class, not `App`.
+
+### Build
+
+```bash
+mvn clean package -DskipTests
+```
+
+Build artifacts are located in `target/`.
+
+---
+
+## 📦 Packaging Windows Installer
+
+The project provides a one-click build script with two ways to run:
+
+**Method 1: Command Line**
+
+```powershell
+# First, cd to the project root directory
+cd E:\JavaFx-TicketHelper
+
+# Run the batch script (automatically calls PowerShell to run build-exe.ps1)
+.\一键打包.bat
+```
+
+> **Note:** Please close the running application before building, otherwise icon files may be locked and cause cleanup to fail.
+
+**Method 2: Run in IntelliJ IDEA**
+
+In the IDEA project file tree, find `build-exe.ps1`, right-click and select `Run 'build-exe.ps1'`.
+
+**Build dependencies:**
+
+- JDK 17+, must include `jpackage`
+- Maven 3.6+
+- WiX Toolset 3.x (required for .msi installer. Without it, only JAR is output)
+
+The installer outputs to `dist/` by default. Since the installer bundles the JRE, a larger file size is expected.
+
+---
+
+## 📁 Project Structure
+
+```
+src/main/java/com/jactil/javafx/tickethelper/
+├── App.java                  # JavaFX Application entry
+├── Launcher.java             # Launcher proxy class (IDE run entry)
+├── LoginStage.java           # Login window (username/password + login button)
+├── MainStage.java            # Main window (nav bar + tab pane)
+├── controller/               # FXML controllers (placeholder)
+│   ├── LoginController.java
+│   └── MainController.java
+├── config/                   # Global configuration
+│   └── AppConfig.java        # Singleton config (language, proxy, etc.)
+├── service/                  # Business service interfaces (placeholder)
+│   ├── LoginService.java     # Login service
+│   ├── TicketService.java    # Ticket booking service
+│   └── NotificationService.java  # Notification service
+├── model/                    # Data models
+│   ├── UserInfo.java         # User information
+│   └── TrainInfo.java        # Train information
+└── util/                     # Utility classes
+    ├── HttpClientUtil.java   # OkHttp wrapper
+    └── TimeUtil.java         # Time utility (with server time sync)
+
+src/main/resources/
+├── css/
+│   └── style.css             # Global styles
+├── i18n/
+│   ├── messages_zh_CN.properties  # Chinese language pack
+│   └── messages_en_US.properties  # English language pack
+├── images/                   # Icons, backgrounds (TODO)
+└── logback.xml               # Logging configuration
+```
+
+---
+
+## 📝 Development Guide
+
+1. **Business module development**: Implement interfaces in the `service/` directory (e.g., `LoginService`, `TicketService`), calling 12306 official APIs via OkHttp
+2. **UI development**: Can use FXML + Controller pattern, or continue with the current code-based approach (`LoginStage` / `MainStage`)
+3. **Internationalization**: Add key-value pairs in `i18n/messages_*.properties`, read via `ResourceBundle`
+4. **Logging**: Uses SLF4J + Logback, configured in `logback.xml` with console + file output
+
+---
+
+## 🔒 Privacy
+
+- All HTTP requests go directly to the **official 12306 API** (`https://kyfw.12306.cn`) — no third-party servers involved
+- User credentials are kept **in memory only** — never persisted to disk
+- Sensitive information is excluded from log files
+
+---
+
+## ⚠️ Security Notes
+
+- ❌ **Do not save account credentials on public devices**
+- ⚠️ Auto-payment feature carries security risks — use with caution
+- ⚠️ High-frequency requests may trigger 12306 risk control — set reasonable intervals
+- ✅ Recommended for personal device use only
+
+---
+
+## 🤝 Contributing
+
+Issues, suggestions, and Pull Requests are welcome.
+
+**Recommended workflow:**
+
+1. Fork this repository.
+2. Create a feature branch.
+3. Keep changes focused, avoid unrelated formatting changes.
+4. Before submitting, run:
+
+   ```bash
+   mvn -q -DskipTests package
+   ```
+
+5. Describe the changes, testing approach, and potential impact in the PR.
+
+---
+
+##  Contact
+
+- **Author**: jactil
+- **Email**: `jactil777@gmail.com`
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License**.
+
+```
+MIT License
+
+Copyright (c) 2024 jactil
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+---
+
+<a id="chinese"></a>
+
+*See [README.md](README.md) for the Chinese version.*

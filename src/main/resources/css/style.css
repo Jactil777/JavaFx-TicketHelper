@@ -1,0 +1,264 @@
+/*
+ * JavaFx-TicketHelper 全局样式
+ * 适用于登录窗口和主界面
+ */
+
+/* ==================== 全局基础样式 ==================== */
+.root {
+    -fx-font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+    -fx-font-size: 14px;
+    -fx-background-color: #f5f7fa;
+}
+
+/* ==================== 登录窗口样式 ==================== */
+.login-root {
+    -fx-background-color: #ffffff;
+}
+
+/* 顶部 Banner */
+.login-banner {
+    -fx-background-color: linear-gradient(to bottom, #1a3a5c, #2c5f8a);
+    -fx-background-radius: 0;
+}
+
+.banner-title {
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 20px;
+    -fx-font-weight: bold;
+}
+
+.banner-subtitle {
+    -fx-text-fill: rgba(255, 255, 255, 0.7);
+    -fx-font-size: 12px;
+    -fx-padding: 4 0 0 0;
+}
+
+/* 表单标签 */
+.form-label {
+    -fx-text-fill: #333333;
+    -fx-font-size: 14px;
+}
+
+/* 表单输入框 */
+.login-input {
+    -fx-padding: 8 12;
+    -fx-border-color: #d0d0d0;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-background-color: #ffffff;
+    -fx-font-size: 14px;
+}
+
+.login-input:focused {
+    -fx-border-color: #1976D2;
+    -fx-effect: dropshadow(gaussian, rgba(25, 118, 210, 0.2), 4, 0, 0, 0);
+}
+
+/* 密码输入框（与切换按钮组合） */
+.login-input-pwd {
+    -fx-border-color: transparent;
+    -fx-border-radius: 0;
+    -fx-border-width: 0;
+    -fx-background-radius: 0;
+    -fx-background-insets: 0;
+}
+
+/* 密码包裹容器 */
+.password-wrapper {
+    -fx-border-color: #d0d0d0;
+    -fx-border-radius: 4;
+    -fx-border-width: 1;
+    -fx-background-radius: 4;
+    -fx-background-color: #ffffff;
+    -fx-padding: 0;
+}
+
+.password-wrapper:focused-within {
+    -fx-border-color: #1976D2;
+    -fx-border-width: 1.5;
+    -fx-effect: dropshadow(gaussian, rgba(25, 118, 210, 0.2), 4, 0, 0, 0);
+}
+
+/* 密码切换按钮 */
+.btn-toggle-pwd {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+    -fx-border-radius: 0;
+    -fx-background-radius: 0;
+    -fx-padding: 8 12;
+    -fx-font-size: 16px;
+    -fx-cursor: hand;
+    -fx-min-width: 42;
+}
+
+.btn-toggle-pwd:hover {
+    -fx-background-color: #f0f0f0;
+}
+
+/* 登录按钮 */
+.btn-login {
+    -fx-background-color: #1976D2;
+    -fx-text-fill: white;
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+    -fx-padding: 10 40;
+    -fx-background-radius: 4;
+    -fx-cursor: hand;
+    -fx-min-width: 200;
+}
+
+.btn-login:hover {
+    -fx-background-color: #1565C0;
+}
+
+.btn-login:pressed {
+    -fx-background-color: #0D47A1;
+}
+
+/* 底部链接 */
+.link-red {
+    -fx-text-fill: #d32f2f;
+    -fx-font-size: 13px;
+    -fx-cursor: hand;
+    -fx-underline: true;
+}
+
+.link-red:hover {
+    -fx-text-fill: #b71c1c;
+}
+
+.link-green {
+    -fx-text-fill: #2e7d32;
+    -fx-font-size: 13px;
+    -fx-cursor: hand;
+    -fx-underline: true;
+}
+
+.link-green:hover {
+    -fx-text-fill: #1b5e20;
+}
+
+/* 更多功能菜单 */
+.more-menu {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #e0e0e0;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.15), 10, 0, 0, 4);
+}
+
+.more-menu .menu-item {
+    -fx-padding: 8 20;
+    -fx-font-size: 13px;
+}
+
+.more-menu .menu-item:hover {
+    -fx-background-color: #e3f2fd;
+}
+
+.more-menu .separator {
+    -fx-padding: 4 0;
+}
+
+/* 状态提示 */
+.status-label {
+    -fx-font-size: 13px;
+    -fx-padding: 4 0 0 0;
+}
+
+.status-success {
+    -fx-text-fill: #2e7d32;
+}
+
+.status-error {
+    -fx-text-fill: #d32f2f;
+}
+
+/* 记住密码复选框 */
+.remember-checkbox {
+    -fx-font-size: 13px;
+    -fx-text-fill: #555555;
+    -fx-cursor: hand;
+}
+
+/* ==================== 顶部导航栏样式 ==================== */
+.nav-bar {
+    -fx-background-color: #1976D2;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.2), 8, 0, 0, 2);
+}
+
+.nav-title {
+    -fx-text-fill: white;
+}
+
+.nav-user {
+    -fx-text-fill: rgba(255, 255, 255, 0.85);
+    -fx-font-size: 13px;
+}
+
+.nav-version {
+    -fx-text-fill: rgba(255, 255, 255, 0.6);
+    -fx-font-size: 12px;
+}
+
+/* 注销按钮 */
+.btn-logout {
+    -fx-background-color: rgba(255, 255, 255, 0.15);
+    -fx-text-fill: rgba(255, 255, 255, 0.9);
+    -fx-font-size: 12px;
+    -fx-padding: 4 12;
+    -fx-background-radius: 4;
+    -fx-border-color: rgba(255, 255, 255, 0.3);
+    -fx-border-radius: 4;
+    -fx-cursor: hand;
+}
+
+.btn-logout:hover {
+    -fx-background-color: rgba(255, 255, 255, 0.25);
+    -fx-border-color: rgba(255, 255, 255, 0.5);
+}
+
+/* ==================== 标签页样式 ==================== */
+.main-tabpane > .tab-header-area > .tab-header-background {
+    -fx-background-color: #e3f2fd;
+}
+
+.main-tabpane > .tab-header-area .tab {
+    -fx-background-color: #bbdefb;
+    -fx-padding: 8 20;
+    -fx-font-size: 14px;
+}
+
+.main-tabpane > .tab-header-area .tab:selected {
+    -fx-background-color: #1976D2;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+}
+
+/* ==================== 占位内容样式 ==================== */
+.placeholder-title {
+    -fx-text-fill: #333333;
+}
+
+.placeholder-desc {
+    -fx-text-fill: #888888;
+}
+
+/* ==================== 通用控件样式 ==================== */
+.text-field, .password-field {
+    -fx-padding: 8 12;
+    -fx-border-color: #cccccc;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-font-size: 14px;
+}
+
+.text-field:focused, .password-field:focused {
+    -fx-border-color: #1976D2;
+    -fx-effect: dropshadow(gaussian, rgba(25, 118, 210, 0.3), 6, 0, 0, 0);
+}
+
+.button {
+    -fx-cursor: hand;
+}
