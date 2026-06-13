@@ -4,7 +4,10 @@ import okhttp3.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.net.ssl.*;
 import java.io.IOException;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -20,12 +23,39 @@ public class HttpClientUtil {
     private static final OkHttpClient client;
 
     static {
-        client = new OkHttpClient.Builder()
+        OkHttpClient.Builder builder = new OkHttpClient.Builder()
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
                 .writeTimeout(30, TimeUnit.SECONDS)
-                .followRedirects(true)
-                .cookieJar(new CookieJar() {
+                .followRedirects(true);
+
+        // 配置信任所有证书，解决部分 JDK 环境下 12306 SSL 握手失败的问题
+        try {
+            TrustManager[] trustAllCerts = new TrustManager[]{
+                    new X509TrustManager() {
+                        @Override
+                        public void checkClientTrusted(X509Certificate[] chain, String authType) {
+                        }
+
+                        @Override
+                        public void checkServerTrusted(X509Certificate[] chain, String authType) {
+                        }
+
+                        @Override
+                        public X509Certificate[] getAcceptedIssuers() {
+                            return new X509Certificate[0];
+                        }
+                    }
+            };
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(null, trustAllCerts, new SecureRandom());
+            builder.sslSocketFactory(sslContext.getSocketFactory(), (X509TrustManager) trustAllCerts[0]);
+            builder.hostnameVerifier((hostname, session) -> true);
+        } catch (Exception e) {
+            logger.error("SSL 配置失败，使用默认配置", e);
+        }
+
+        builder.cookieJar(new CookieJar() {
                     private final java.util.List<Cookie> cookieStore = new java.util.ArrayList<>();
 
                     @Override
@@ -47,8 +77,9 @@ public class HttpClientUtil {
                         }
                         return validCookies;
                     }
-                })
-                .build();
+                });
+
+        client = builder.build();
     }
 
     /**

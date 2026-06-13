@@ -1,4 +1,4 @@
-/*
+﻿/*
  * JavaFx-TicketHelper 全局样式
  * 适用于登录窗口和主界面
  */
@@ -6,7 +6,7 @@
 /* ==================== 全局基础样式 ==================== */
 .root {
     -fx-font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
-    -fx-font-size: 14px;
+    -fx-font-size: 15px;
     -fx-background-color: #f5f7fa;
 }
 
@@ -23,30 +23,30 @@
 
 .banner-title {
     -fx-text-fill: #ffffff;
-    -fx-font-size: 20px;
+    -fx-font-size: 26px;
     -fx-font-weight: bold;
 }
 
 .banner-subtitle {
     -fx-text-fill: rgba(255, 255, 255, 0.7);
-    -fx-font-size: 12px;
-    -fx-padding: 4 0 0 0;
+    -fx-font-size: 15px;
+    -fx-padding: 6 0 0 0;
 }
 
 /* 表单标签 */
 .form-label {
     -fx-text-fill: #333333;
-    -fx-font-size: 14px;
+    -fx-font-size: 15px;
 }
 
 /* 表单输入框 */
 .login-input {
-    -fx-padding: 8 12;
+    -fx-padding: 10 14;
     -fx-border-color: #d0d0d0;
     -fx-border-radius: 4;
     -fx-background-radius: 4;
     -fx-background-color: #ffffff;
-    -fx-font-size: 14px;
+    -fx-font-size: 15px;
 }
 
 .login-input:focused {
@@ -55,12 +55,13 @@
 }
 
 /* 密码输入框（与切换按钮组合） */
-.login-input-pwd {
+.password-wrapper .login-input-pwd {
     -fx-border-color: transparent;
     -fx-border-radius: 0;
     -fx-border-width: 0;
     -fx-background-radius: 0;
     -fx-background-insets: 0;
+    -fx-background-color: transparent;
 }
 
 /* 密码包裹容器 */
@@ -86,8 +87,8 @@
     -fx-border-width: 0;
     -fx-border-radius: 0;
     -fx-background-radius: 0;
-    -fx-padding: 8 12;
-    -fx-font-size: 16px;
+    -fx-padding: 10 14;
+    -fx-font-size: 18px;
     -fx-cursor: hand;
     -fx-min-width: 42;
 }
@@ -100,12 +101,12 @@
 .btn-login {
     -fx-background-color: #1976D2;
     -fx-text-fill: white;
-    -fx-font-size: 15px;
+    -fx-font-size: 17px;
     -fx-font-weight: bold;
-    -fx-padding: 10 40;
+    -fx-padding: 12 50;
     -fx-background-radius: 4;
     -fx-cursor: hand;
-    -fx-min-width: 200;
+    -fx-min-width: 240;
 }
 
 .btn-login:hover {
@@ -116,26 +117,29 @@
     -fx-background-color: #0D47A1;
 }
 
-/* 底部链接 */
-.link-red {
+/* 底部链接 - 扫码登录 */
+.link-qr {
     -fx-text-fill: #d32f2f;
-    -fx-font-size: 13px;
+    -fx-font-size: 16px;
     -fx-cursor: hand;
+    -fx-padding: 6 12;
     -fx-underline: true;
 }
 
-.link-red:hover {
+.link-qr:hover {
     -fx-text-fill: #b71c1c;
 }
 
-.link-green {
+/* 底部链接 - 更多功能 */
+.link-more {
     -fx-text-fill: #2e7d32;
-    -fx-font-size: 13px;
+    -fx-font-size: 16px;
     -fx-cursor: hand;
+    -fx-padding: 6 12;
     -fx-underline: true;
 }
 
-.link-green:hover {
+.link-more:hover {
     -fx-text-fill: #1b5e20;
 }
 
@@ -150,7 +154,7 @@
 
 .more-menu .menu-item {
     -fx-padding: 8 20;
-    -fx-font-size: 13px;
+    -fx-font-size: 15px;
 }
 
 .more-menu .menu-item:hover {
@@ -163,8 +167,8 @@
 
 /* 状态提示 */
 .status-label {
-    -fx-font-size: 13px;
-    -fx-padding: 4 0 0 0;
+    -fx-font-size: 15px;
+    -fx-padding: 6 0 0 0;
 }
 
 .status-success {
@@ -177,9 +181,36 @@
 
 /* 记住密码复选框 */
 .remember-checkbox {
-    -fx-font-size: 13px;
-    -fx-text-fill: #555555;
+    -fx-font-size: 14px;
+    -fx-text-fill: #666666;
     -fx-cursor: hand;
+    -fx-padding: 4 0 0 0;
+}
+
+.remember-checkbox .box {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #cccccc;
+    -fx-border-radius: 3;
+    -fx-background-radius: 3;
+    -fx-border-width: 1.5;
+}
+
+.remember-checkbox:selected .box {
+    -fx-background-color: #1976D2;
+    -fx-border-color: #1976D2;
+}
+
+.remember-checkbox .mark {
+    -fx-background-color: transparent;
+}
+
+.remember-checkbox:selected .mark {
+    -fx-background-color: white;
+    -fx-shape: "M0,5 L3,8 L9,0 L7,-1 L3,5 L1,3 Z";
+}
+
+.remember-checkbox:hover .box {
+    -fx-border-color: #1976D2;
 }
 
 /* ==================== 顶部导航栏样式 ==================== */
@@ -194,20 +225,20 @@
 
 .nav-user {
     -fx-text-fill: rgba(255, 255, 255, 0.85);
-    -fx-font-size: 13px;
+    -fx-font-size: 15px;
 }
 
 .nav-version {
     -fx-text-fill: rgba(255, 255, 255, 0.6);
-    -fx-font-size: 12px;
+    -fx-font-size: 15px;
 }
 
 /* 注销按钮 */
 .btn-logout {
     -fx-background-color: rgba(255, 255, 255, 0.15);
     -fx-text-fill: rgba(255, 255, 255, 0.9);
-    -fx-font-size: 12px;
-    -fx-padding: 4 12;
+    -fx-font-size: 15px;
+    -fx-padding: 6 14;
     -fx-background-radius: 4;
     -fx-border-color: rgba(255, 255, 255, 0.3);
     -fx-border-radius: 4;
@@ -227,7 +258,7 @@
 .main-tabpane > .tab-header-area .tab {
     -fx-background-color: #bbdefb;
     -fx-padding: 8 20;
-    -fx-font-size: 14px;
+    -fx-font-size: 15px;
 }
 
 .main-tabpane > .tab-header-area .tab:selected {
@@ -247,11 +278,11 @@
 
 /* ==================== 通用控件样式 ==================== */
 .text-field, .password-field {
-    -fx-padding: 8 12;
+    -fx-padding: 10 14;
     -fx-border-color: #cccccc;
     -fx-border-radius: 4;
     -fx-background-radius: 4;
-    -fx-font-size: 14px;
+    -fx-font-size: 15px;
 }
 
 .text-field:focused, .password-field:focused {
@@ -261,4 +292,264 @@
 
 .button {
     -fx-cursor: hand;
+}
+
+/* ==================== 抢票页面样式 ==================== */
+
+/* 顶部菜单栏 */
+.top-menubar {
+    -fx-background-color: #f0f0f0;
+    -fx-border-color: #d0d0d0;
+    -fx-border-width: 0 0 1 0;
+}
+
+.menu-item-label {
+    -fx-font-size: 13px;
+    -fx-text-fill: #333333;
+    -fx-cursor: hand;
+    -fx-padding: 2 6;
+}
+
+.menu-item-label:hover {
+    -fx-text-fill: #1976D2;
+    -fx-background-color: #e3f2fd;
+}
+
+.notice-label {
+    -fx-font-size: 13px;
+    -fx-text-fill: #d32f2f;
+    -fx-padding: 2 8;
+}
+
+/* 查询区域 */
+.query-area {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d0d0d0;
+    -fx-border-width: 0 0 1 0;
+}
+
+.query-label {
+    -fx-font-size: 13px;
+    -fx-text-fill: #333333;
+    -fx-font-weight: bold;
+}
+
+.query-input {
+    -fx-padding: 4 8;
+    -fx-border-color: #cccccc;
+    -fx-border-radius: 3;
+    -fx-background-radius: 3;
+    -fx-font-size: 13px;
+    -fx-pref-height: 28;
+}
+
+.query-input:focused {
+    -fx-border-color: #1976D2;
+}
+
+.query-datepicker {
+    -fx-padding: 4 8;
+    -fx-font-size: 13px;
+    -fx-pref-height: 28;
+}
+
+/* 交换按钮 */
+.btn-swap {
+    -fx-background-color: #e0e0e0;
+    -fx-text-fill: #333333;
+    -fx-font-size: 14px;
+    -fx-background-radius: 3;
+    -fx-padding: 4 8;
+    -fx-pref-height: 28;
+}
+
+.btn-swap:hover {
+    -fx-background-color: #bdbdbd;
+}
+
+/* 日期导航按钮 */
+.btn-date-nav {
+    -fx-background-color: #e0e0e0;
+    -fx-text-fill: #333333;
+    -fx-font-size: 13px;
+    -fx-background-radius: 3;
+    -fx-padding: 4 10;
+    -fx-pref-height: 28;
+}
+
+.btn-date-nav:hover {
+    -fx-background-color: #bdbdbd;
+}
+
+/* 查询车票按钮 */
+.btn-query {
+    -fx-background-color: #1976D2;
+    -fx-text-fill: white;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-background-radius: 4;
+    -fx-padding: 8 12;
+}
+
+.btn-query:hover {
+    -fx-background-color: #1565C0;
+}
+
+/* 小按钮 */
+.btn-small {
+    -fx-background-color: #e0e0e0;
+    -fx-text-fill: #333333;
+    -fx-font-size: 12px;
+    -fx-background-radius: 3;
+    -fx-padding: 3 10;
+}
+
+.btn-small:hover {
+    -fx-background-color: #bdbdbd;
+}
+
+/* 链接样式 */
+.link-blue {
+    -fx-text-fill: #1976D2;
+    -fx-font-size: 13px;
+    -fx-cursor: hand;
+    -fx-underline: true;
+}
+
+.link-blue:hover {
+    -fx-text-fill: #0D47A1;
+}
+
+/* 设置区域切换 */
+.toggle-settings {
+    -fx-text-fill: #1976D2;
+    -fx-font-size: 13px;
+    -fx-cursor: hand;
+    -fx-padding: 4 0;
+}
+
+.toggle-settings:hover {
+    -fx-text-fill: #0D47A1;
+    -fx-underline: true;
+}
+
+/* 结果表格区域 */
+.table-area {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d0d0d0;
+    -fx-border-width: 1 0 0 0;
+}
+
+.result-table {
+    -fx-font-size: 13px;
+    -fx-border-color: #d0d0d0;
+}
+
+.result-table .column-header {
+    -fx-background-color: #f5f5f5;
+    -fx-border-color: #d0d0d0;
+    -fx-border-width: 0 1 1 0;
+    -fx-padding: 6 4;
+}
+
+.result-table .column-header .label {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #333333;
+}
+
+.result-table .table-row-cell {
+    -fx-border-color: transparent transparent #e0e0e0 transparent;
+}
+
+.result-table .table-row-cell:selected {
+    -fx-background-color: #e3f2fd;
+}
+
+/* 设置区域 */
+.settings-area {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d0d0d0;
+    -fx-border-width: 1 0 0 0;
+}
+
+.section-title {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #d32f2f;
+}
+
+.setting-label {
+    -fx-font-size: 12px;
+    -fx-text-fill: #333333;
+}
+
+.setting-list {
+    -fx-font-size: 12px;
+    -fx-border-color: #cccccc;
+    -fx-border-radius: 3;
+    -fx-background-radius: 3;
+}
+
+.setting-list .list-cell {
+    -fx-padding: 3 6;
+}
+
+.setting-list .list-cell:selected {
+    -fx-background-color: #1976D2;
+    -fx-text-fill: white;
+}
+
+/* 日志输出区 */
+.log-area {
+    -fx-font-family: "Consolas", "Microsoft YaHei", monospace;
+    -fx-font-size: 12px;
+    -fx-border-color: #cccccc;
+    -fx-border-radius: 3;
+    -fx-background-radius: 3;
+    -fx-background-color: #1e1e1e;
+    -fx-text-fill: #d4d4d4;
+    -fx-padding: 6;
+}
+
+/* 开始抢票按钮 */
+.btn-start-grab {
+    -fx-background-color: #4CAF50;
+    -fx-text-fill: white;
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-background-radius: 4;
+    -fx-padding: 8 20;
+}
+
+.btn-start-grab:hover {
+    -fx-background-color: #43A047;
+}
+
+.btn-start-grab:pressed {
+    -fx-background-color: #388E3C;
+}
+
+/* 底部状态栏 */
+.status-bar {
+    -fx-background-color: #f0f0f0;
+    -fx-border-color: #d0d0d0;
+    -fx-border-width: 1 0 0 0;
+}
+
+.status-bar .status-label {
+    -fx-font-size: 12px;
+    -fx-text-fill: #555555;
+}
+
+.btn-logout-small {
+    -fx-background-color: #e0e0e0;
+    -fx-text-fill: #333333;
+    -fx-font-size: 12px;
+    -fx-background-radius: 3;
+    -fx-padding: 3 10;
+}
+
+.btn-logout-small:hover {
+    -fx-background-color: #bdbdbd;
 }

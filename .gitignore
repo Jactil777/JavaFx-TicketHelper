@@ -19,3 +19,4 @@ credentials.properties
 
 # Logs
 *.log
+./dist

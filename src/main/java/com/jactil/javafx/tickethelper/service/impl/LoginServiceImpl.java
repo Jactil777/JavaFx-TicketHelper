@@ -34,6 +34,8 @@ public class LoginServiceImpl implements LoginService {
     private static final String UAMTK_URL = "https://kyfw.12306.cn/passport/web/auth/uamtk";
     private static final String UAMAUTHCLIENT_URL = "https://kyfw.12306.cn/otn/uamauthclient";
     private static final String INIT_MY12306_API_URL = "https://kyfw.12306.cn/otn/index/initMy12306Api";
+    private static final String CREATE_QR64_URL = "https://kyfw.12306.cn/passport/web/create-qr64";
+    private static final String CHECK_QR_URL = "https://kyfw.12306.cn/passport/web/checkqr";
 
     private UserInfo currentUser;
     private boolean sessionInitialized = false;
@@ -174,35 +176,27 @@ public class LoginServiceImpl implements LoginService {
      */
     private void completeAuthChain(UserInfo userInfo) {
         try {
-            // 1. 调用 uamtk 获取认证 token
+            // 1. 调用 uamtk 获取 newapptk
             Map<String, String> uamtkParams = new HashMap<>();
             uamtkParams.put("appid", "otn");
             String uamtkResponse = HttpClientUtil.post(UAMTK_URL, uamtkParams);
             logger.info("uamtk 响应：{}", uamtkResponse);
 
             JsonNode uamtkRoot = objectMapper.readTree(uamtkResponse);
-            // 12306 返回的字段名是 newapptk（不是 newUamtk）
-            String newUamtk = uamtkRoot.path("newapptk").asText("");
-            logger.info("uamtk newapptk 字段值：'{}'", newUamtk);
-
-            // 如果响应体没有 newUamtk，尝试从 result_message 或其他字段获取
-            if (newUamtk.isEmpty()) {
-                // 打印所有字段便于调试
-                logger.info("uamtk 响应所有字段：{}", uamtkRoot.fieldNames());
-                uamtkRoot.fieldNames().forEachRemaining(field ->
-                    logger.info("  {} = {}", field, uamtkRoot.path(field).asText())
-                );
-            }
+            String newapptk = uamtkRoot.path("newapptk").asText("");
+            int uamtkCode = uamtkRoot.path("result_code").asInt(-1);
 
             // 2. 调用 uamauthclient 换取 tk cookie
-            if (!newUamtk.isEmpty()) {
+            if (uamtkCode == 0 && !newapptk.isEmpty()) {
                 Map<String, String> authClientParams = new HashMap<>();
-                authClientParams.put("tk", newUamtk);
-                logger.info("uamauthclient 请求参数 tk={}", newUamtk);
+                authClientParams.put("tk", newapptk);
+                logger.info("uamauthclient 请求参数 tk={}", newapptk);
                 String authClientResponse = HttpClientUtil.post(UAMAUTHCLIENT_URL, authClientParams);
                 logger.info("uamauthclient 响应：{}", authClientResponse);
+            } else if (uamtkCode == 4) {
+                logger.warn("uamtk 返回“用户已在他处登录”，跳过 uamauthclient，直接获取用户信息");
             } else {
-                logger.warn("uamtk 未返回有效的 newUamtk，跳过 uamauthclient");
+                logger.warn("uamtk 未返回有效 newapptk (code={}, tk='{}')，跳过 uamauthclient", uamtkCode, newapptk);
             }
 
             // 3. 调用 initMy12306Api 获取用户详细信息
@@ -214,16 +208,23 @@ public class LoginServiceImpl implements LoginService {
 
     /**
      * 调用 initMy12306Api 获取用户详细信息
+     * 使用 GET 请求，如果首次返回 HTML 会重试一次
      */
     private void fetchUserInfo(UserInfo userInfo) {
         try {
-            String response = HttpClientUtil.post(INIT_MY12306_API_URL, new HashMap<>());
+            // initMy12306Api 使用 GET 请求（与 12306 前端一致）
+            String response = HttpClientUtil.get(INIT_MY12306_API_URL);
             logger.debug("initMy12306Api 响应长度：{}", response != null ? response.length() : 0);
 
-            // 防止返回 HTML 错误页
+            // 防止返回 HTML 错误页，重试一次
             if (response == null || response.trim().startsWith("<")) {
-                logger.warn("initMy12306Api 返回非JSON内容，认证链可能未完成");
-                return;
+                logger.warn("initMy12306Api 返回非JSON内容，重试一次...");
+                Thread.sleep(1000);
+                response = HttpClientUtil.get(INIT_MY12306_API_URL);
+                if (response == null || response.trim().startsWith("<")) {
+                    logger.warn("initMy12306Api 重试后仍返回非JSON内容，认证链可能未完成");
+                    return;
+                }
             }
 
             JsonNode root = objectMapper.readTree(response);
@@ -264,5 +265,78 @@ public class LoginServiceImpl implements LoginService {
     @Override
     public boolean isLoggedIn() {
         return currentUser != null && currentUser.isLoggedIn();
+    }
+
+    @Override
+    public QrLoginResult createQrCode() {
+        logger.info("创建扫码登录二维码");
+        try {
+            initSession();
+
+            Map<String, String> params = new HashMap<>();
+            params.put("appid", "otn");
+
+            String response = HttpClientUtil.post(CREATE_QR64_URL, params);
+            logger.debug("create-qr64 响应：{}", response);
+
+            JsonNode root = objectMapper.readTree(response);
+            int resultCode = root.path("result_code").asInt(-1);
+
+            if (resultCode == 0) {
+                String imageBase64 = root.path("image").asText("");
+                String uuid = root.path("uuid").asText("");
+                logger.info("二维码创建成功，uuid={}", uuid);
+                return QrLoginResult.generated(imageBase64, uuid);
+            }
+
+            String msg = root.path("result_message").asText("生成二维码失败");
+            return QrLoginResult.fail(msg);
+        } catch (IOException e) {
+            logger.error("创建二维码异常", e);
+            return QrLoginResult.fail("网络异常：" + e.getMessage());
+        }
+    }
+
+    @Override
+    public QrLoginResult checkQrStatus(String uuid) {
+        try {
+            Map<String, String> params = new HashMap<>();
+            params.put("uuid", uuid);
+            params.put("appid", "otn");
+
+            String response = HttpClientUtil.post(CHECK_QR_URL, params);
+            logger.debug("checkqr 响应：{}", response);
+
+            JsonNode root = objectMapper.readTree(response);
+            int resultCode = root.path("result_code").asInt(-1);
+
+            // result_code: 0=等待扫码, 1=已扫描待确认, 2=已确认登录成功, 3=已过期
+            switch (resultCode) {
+                case 0:
+                    return QrLoginResult.waiting();
+                case 1:
+                    // 已扫描但未确认
+                    QrLoginResult scanned = QrLoginResult.waiting();
+                    scanned.message = "请在手机上确认登录";
+                    return scanned;
+                case 2:
+                    // 扫码登录成功，获取用户信息
+                    logger.info("扫码登录成功");
+                    UserInfo userInfo = new UserInfo("", "");
+                    userInfo.setLoggedIn(true);
+                    completeAuthChain(userInfo);
+                    currentUser = userInfo;
+                    return QrLoginResult.success(userInfo);
+                case 3:
+                    logger.info("二维码已过期");
+                    return QrLoginResult.expired();
+                default:
+                    String msg = root.path("result_message").asText("未知状态");
+                    return QrLoginResult.fail(msg);
+            }
+        } catch (IOException e) {
+            logger.error("检查扫码状态异常", e);
+            return QrLoginResult.fail("网络异常：" + e.getMessage());
+        }
     }
 }
