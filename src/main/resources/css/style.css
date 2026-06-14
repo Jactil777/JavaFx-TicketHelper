@@ -807,6 +807,87 @@
     -fx-padding: 8 16;
 }
 
+/* ==================== 订单管理页面样式 ==================== */
+
+.order-top-bar {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d0d0d0;
+    -fx-border-width: 0 0 1 0;
+}
+
+.order-section-title {
+    -fx-font-size: 13px;
+    -fx-text-fill: #333333;
+    -fx-font-weight: bold;
+}
+
+.order-btn {
+    -fx-background-color: #e0e0e0;
+    -fx-text-fill: #333333;
+    -fx-font-size: 13px;
+    -fx-background-radius: 3;
+    -fx-padding: 4 12;
+    -fx-cursor: hand;
+}
+
+.order-btn:hover {
+    -fx-background-color: #bdbdbd;
+}
+
+.order-btn:pressed {
+    -fx-background-color: #9e9e9e;
+}
+
+/* 抢票页面操作框（右上角分组） */
+.op-group-box {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #c0c0c0;
+    -fx-border-width: 1;
+    -fx-border-radius: 2;
+    -fx-background-radius: 2;
+}
+
+.op-group-title {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #333333;
+    -fx-padding: 0 0 2 0;
+}
+
+/* 订单/候补页面分组线框（TitledPane） */
+.order-group {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #c0c0c0;
+    -fx-border-width: 1;
+    -fx-border-radius: 2;
+    -fx-background-radius: 2;
+    -fx-padding: 0;
+}
+
+.order-group > .title {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #333333;
+    -fx-padding: 2 6 2 6;
+    -fx-background-color: transparent;
+}
+
+.order-group > .title > .arrow-button {
+    -fx-padding: 0;
+    -fx-background-color: transparent;
+}
+
+.order-group > .title > .arrow-button > .arrow {
+    -fx-shape: "";
+    -fx-padding: 0;
+}
+
+.order-group > .content {
+    -fx-background-color: #ffffff;
+    -fx-padding: 0;
+    -fx-border-color: transparent;
+}
+
 /* ==================== 12306 内嵌浏览器工具栏 ==================== */
 
 .web-toolbar {

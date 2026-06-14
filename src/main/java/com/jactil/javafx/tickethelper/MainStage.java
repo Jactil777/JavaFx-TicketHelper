@@ -242,10 +242,10 @@ public class MainStage extends Stage {
         ticketTab.setContent(createTicketPage());
 
         Tab orderTab = new Tab("订单管理页面");
-        orderTab.setContent(createPlaceholderPage("订单管理页面", "订单查询、支付提醒、自动刷单（待实现）"));
+        orderTab.setContent(createOrderPage());
 
         Tab waitlistTab = new Tab("候补订单页面");
-        waitlistTab.setContent(createPlaceholderPage("候补订单页面", "候补订单查询、自动提交候补（待实现）"));
+        waitlistTab.setContent(createWaitlistPage());
 
         tabPane.getTabs().addAll(ticketTab, orderTab, waitlistTab);
         return tabPane;
@@ -277,24 +277,31 @@ public class MainStage extends Stage {
     // ==================== 查询区域 ====================
 
     private VBox createQueryArea() {
-        VBox queryBox = new VBox(6);
+        VBox queryBox = new VBox(4);
         queryBox.setPadding(new Insets(8, 10, 8, 10));
         queryBox.getStyleClass().add("query-area");
 
-        // 第一行：出发/目的/日期/发车时间/操作/查询按钮
-        HBox row1 = new HBox(8);
-        row1.setAlignment(Pos.CENTER_LEFT);
+        // ==================== 主体：左侧4行 + 右侧操作框（等高） ====================
+        HBox mainRow = new HBox(0);
+        mainRow.setAlignment(Pos.TOP_LEFT);
 
-        // 出发
+        // 左侧：4行内容
+        VBox leftRows = new VBox(4);
+        HBox.setHgrow(leftRows, Priority.ALWAYS);
+
+        // -- 第1行：出发/目的/日期/发车时间 --
+        HBox formFields = new HBox(6);
+        formFields.setAlignment(Pos.CENTER_LEFT);
+
         Label fromLabel = new Label("出发:");
         fromLabel.getStyleClass().add("query-label");
         fromStationField = new TextField();
         fromStationField.setPromptText("出发站");
-        fromStationField.setPrefWidth(120);
+        fromStationField.setPrefWidth(110);
         fromStationField.getStyleClass().add("query-input");
 
         Button swapBtn = new Button("\u21C4");
-        swapBtn.setPrefWidth(36);
+        swapBtn.setPrefWidth(32);
         swapBtn.getStyleClass().add("btn-swap");
         swapBtn.setOnAction(e -> {
             String tmp = fromStationField.getText();
@@ -302,75 +309,36 @@ public class MainStage extends Stage {
             toStationField.setText(tmp);
         });
 
-        // 目的
         Label toLabel = new Label("目的:");
         toLabel.getStyleClass().add("query-label");
         toStationField = new TextField();
         toStationField.setPromptText("目的站");
-        toStationField.setPrefWidth(120);
+        toStationField.setPrefWidth(110);
         toStationField.getStyleClass().add("query-input");
 
-        // 日期
         Label dateLabel = new Label("日期:");
         dateLabel.getStyleClass().add("query-label");
         Button datePrevBtn = new Button("<");
         datePrevBtn.getStyleClass().add("btn-date-nav");
         datePicker = new DatePicker(LocalDate.now());
-        datePicker.setPrefWidth(130);
+        datePicker.setPrefWidth(150);
         datePicker.getStyleClass().add("query-datepicker");
         Button dateNextBtn = new Button(">");
         dateNextBtn.getStyleClass().add("btn-date-nav");
 
-        // 发车时间
         Label timeLabel = new Label("发车时间:");
         timeLabel.getStyleClass().add("query-label");
         departTimeCombo = new ComboBox<>();
         departTimeCombo.getItems().addAll("00:00-24:00", "00:00-06:00", "06:00-12:00", "12:00-18:00", "18:00-24:00");
         departTimeCombo.setValue("00:00-24:00");
-        departTimeCombo.setPrefWidth(130);
+        departTimeCombo.setPrefWidth(120);
 
-        row1.getChildren().addAll(fromLabel, fromStationField, swapBtn, toLabel, toStationField,
+        formFields.getChildren().addAll(fromLabel, fromStationField, swapBtn, toLabel, toStationField,
                 dateLabel, datePrevBtn, datePicker, dateNextBtn, timeLabel, departTimeCombo);
 
-        // 操作区（右侧）
-        VBox opBox = new VBox(4);
-        opBox.setAlignment(Pos.CENTER_LEFT);
-
-        Label opTitle = new Label("操作");
-        opTitle.getStyleClass().add("query-label");
-
-        HBox opRow1 = new HBox(12);
-        CheckBox adultCheck = new CheckBox("成人");
-        adultCheck.setSelected(true);
-        CheckBox studentCheck = new CheckBox("学生");
-        Label transferLink = new Label("查询中转换乘");
-        transferLink.getStyleClass().add("link-blue");
-
-        HBox opRow2 = new HBox(12);
-        CheckBox onlyAvailableCheck = new CheckBox("只看有票的车次");
-        Label showAllPriceLink = new Label("显示全部票价");
-        showAllPriceLink.getStyleClass().add("link-blue");
-
-        Button queryBtn = new Button("查询\n车票");
-        queryBtn.getStyleClass().add("btn-query");
-        queryBtn.setPrefWidth(60);
-        queryBtn.setPrefHeight(50);
-
-        opBox.getChildren().addAll(opTitle, opRow1, opRow2);
-        opRow1.getChildren().addAll(adultCheck, studentCheck, transferLink);
-        opRow2.getChildren().addAll(onlyAvailableCheck, showAllPriceLink);
-
-        HBox row1Right = new HBox(10);
-        row1Right.setAlignment(Pos.CENTER_LEFT);
-        HBox.setHgrow(row1Right, Priority.ALWAYS);
-        row1Right.getChildren().addAll(opBox, queryBtn);
-        row1.getChildren().add(row1Right);
-
-        // 第二行：模式/筛选/隐藏
-        HBox row2 = new HBox(8);
-        row2.setAlignment(Pos.CENTER_LEFT);
-
-        // 模式
+        // -- 第2行：模式 --
+        HBox modeRow = new HBox(6);
+        modeRow.setAlignment(Pos.CENTER_LEFT);
         Label modeLabel = new Label("模式:");
         modeLabel.getStyleClass().add("query-label");
         ToggleGroup modeGroup = new ToggleGroup();
@@ -383,10 +351,11 @@ public class MainStage extends Stage {
         multiStation.setToggleGroup(modeGroup);
         Button addTaskBtn = new Button("加入新任务");
         addTaskBtn.getStyleClass().add("btn-small");
+        modeRow.getChildren().addAll(modeLabel, singleTask, multiTask, multiStation, addTaskBtn);
 
-        row2.getChildren().addAll(modeLabel, singleTask, multiTask, multiStation, addTaskBtn);
-
-        // 筛选
+        // -- 第3行：筛选 --
+        HBox filterRow = new HBox(6);
+        filterRow.setAlignment(Pos.CENTER_LEFT);
         Label filterLabel = new Label("筛选:");
         filterLabel.getStyleClass().add("query-label");
         CheckBox filterAll = new CheckBox("全部");
@@ -403,10 +372,11 @@ public class MainStage extends Stage {
         filterK.setSelected(true);
         CheckBox filterOther = new CheckBox("其他");
         filterOther.setSelected(true);
+        filterRow.getChildren().addAll(filterLabel, filterAll, filterG, filterD, filterZ, filterT, filterK, filterOther);
 
-        row2.getChildren().addAll(filterLabel, filterAll, filterG, filterD, filterZ, filterT, filterK, filterOther);
-
-        // 隐藏
+        // -- 第4行：隐藏 --
+        HBox hideRow = new HBox(6);
+        hideRow.setAlignment(Pos.CENTER_LEFT);
         Label hideLabel = new Label("隐藏:");
         hideLabel.getStyleClass().add("query-label");
         CheckBox hideAll = new CheckBox("全选");
@@ -433,19 +403,61 @@ public class MainStage extends Stage {
         hideNoSeat.setSelected(true);
         CheckBox hideOtherSeat = new CheckBox("其他");
         hideOtherSeat.setSelected(true);
-
-        row2.getChildren().addAll(hideLabel, hideAll, hideBusiness, hideFirstPlus, hideFirst, hideSecond,
+        hideRow.getChildren().addAll(hideLabel, hideAll, hideBusiness, hideFirstPlus, hideFirst, hideSecond,
                 hideHighSoft, hideSoftSleeper, hideHardSleeper, hideSoftSeat, hideHardSeat, hideNoSeat, hideOtherSeat);
 
-        // 第三行：显示/隐藏设置区域切换
-        HBox row3 = new HBox();
-        row3.setAlignment(Pos.CENTER);
+        leftRows.getChildren().addAll(formFields, modeRow, filterRow, hideRow);
+
+        // 右侧：操作框（固定宽度，高度自动匹配左侧4行）
+        CheckBox adultCheck = new CheckBox("成人");
+        adultCheck.setSelected(true);
+        CheckBox studentCheck = new CheckBox("学生");
+        Label transferLink = new Label("查询中转换乘");
+        transferLink.getStyleClass().add("link-blue");
+        CheckBox onlyAvailableCheck = new CheckBox("只看有票的车次");
+        Label showAllPriceLink = new Label("显示全部票价");
+        showAllPriceLink.getStyleClass().add("link-blue");
+
+        Button queryBtn = new Button("查询\n车票");
+        queryBtn.getStyleClass().add("btn-query");
+        queryBtn.setPrefWidth(65);
+        queryBtn.setPrefHeight(48);
+
+        VBox opCheckboxes = new VBox(3);
+        HBox opRow1 = new HBox(8);
+        opRow1.setAlignment(Pos.CENTER_LEFT);
+        opRow1.getChildren().addAll(adultCheck, studentCheck, transferLink);
+        HBox opRow2 = new HBox(8);
+        opRow2.setAlignment(Pos.CENTER_LEFT);
+        opRow2.getChildren().addAll(onlyAvailableCheck, showAllPriceLink);
+        opCheckboxes.getChildren().addAll(opRow1, opRow2);
+
+        VBox opBox = new VBox(3);
+        opBox.setPadding(new Insets(2, 8, 6, 8));
+        opBox.getStyleClass().add("op-group-box");
+        opBox.setPrefWidth(290);
+
+        Label opTitle = new Label("操作");
+        opTitle.getStyleClass().add("op-group-title");
+
+        HBox opContent = new HBox(10);
+        opContent.setAlignment(Pos.CENTER_LEFT);
+        VBox.setVgrow(opCheckboxes, Priority.ALWAYS);
+        opContent.getChildren().addAll(opCheckboxes, queryBtn);
+
+        opBox.getChildren().addAll(opTitle, opContent);
+
+        mainRow.getChildren().addAll(leftRows, opBox);
+
+        // ==================== 底部：显示/隐藏设置区域切换 ====================
+        HBox toggleRow = new HBox();
+        toggleRow.setAlignment(Pos.CENTER);
         Label toggleSettings = new Label("\u2191显示设置区域\u2191");
         toggleSettings.getStyleClass().add("toggle-settings");
         toggleSettings.setOnMouseClicked(e -> toggleSettings());
-        row3.getChildren().add(toggleSettings);
+        toggleRow.getChildren().add(toggleSettings);
 
-        queryBox.getChildren().addAll(row1, row2, row3);
+        queryBox.getChildren().addAll(mainRow, toggleRow);
         return queryBox;
     }
 
@@ -720,6 +732,190 @@ public class MainStage extends Stage {
 
         statusBar.getChildren().addAll(accountLabel, pushLabel, progressLabel, volumeLabel, networkLabel, spacer);
         return statusBar;
+    }
+
+    // ==================== 订单管理页面 ====================
+
+    private VBox createOrderPage() {
+        VBox page = new VBox(0);
+
+        // 顶部操作区：查询 + 未完成订单 + 已完成订单 + 相关问题（分组线框）
+        HBox topBar = new HBox(8);
+        topBar.setPadding(new Insets(8, 10, 8, 10));
+        topBar.getStyleClass().add("order-top-bar");
+
+        // 查询区域（分组）
+        Button queryAllBtn = new Button("查询全部订单");
+        queryAllBtn.getStyleClass().add("order-btn");
+        CheckBox historyCheck = new CheckBox("历史");
+        HBox queryContent = new HBox(8);
+        queryContent.setAlignment(Pos.CENTER_LEFT);
+        queryContent.setPadding(new Insets(4, 8, 6, 8));
+        queryContent.getChildren().addAll(queryAllBtn, historyCheck);
+        TitledPane queryGroup = new TitledPane("查询", queryContent);
+        queryGroup.setCollapsible(false);
+        queryGroup.getStyleClass().add("order-group");
+        queryGroup.setPrefWidth(220);
+
+        // 未完成订单区域（分组）
+        Button payBtn = new Button("继续支付");
+        payBtn.getStyleClass().add("order-btn");
+        Button cancelBtn = new Button("取消订单");
+        cancelBtn.getStyleClass().add("order-btn");
+        HBox unfinishedContent = new HBox(8);
+        unfinishedContent.setAlignment(Pos.CENTER_LEFT);
+        unfinishedContent.setPadding(new Insets(4, 8, 6, 8));
+        unfinishedContent.getChildren().addAll(payBtn, cancelBtn);
+        TitledPane unfinishedGroup = new TitledPane("未完成订单", unfinishedContent);
+        unfinishedGroup.setCollapsible(false);
+        unfinishedGroup.getStyleClass().add("order-group");
+        unfinishedGroup.setPrefWidth(200);
+
+        // 已完成订单区域（分组）
+        Button refundBtn = new Button("退票");
+        refundBtn.getStyleClass().add("order-btn");
+        Button changeBtn = new Button("改签(刷票)");
+        changeBtn.getStyleClass().add("order-btn");
+        Button changeStationBtn = new Button("变更到站(刷票)");
+        changeStationBtn.getStyleClass().add("order-btn");
+        HBox finishedContent = new HBox(8);
+        finishedContent.setAlignment(Pos.CENTER_LEFT);
+        finishedContent.setPadding(new Insets(4, 8, 6, 8));
+        finishedContent.getChildren().addAll(refundBtn, changeBtn, changeStationBtn);
+        TitledPane finishedGroup = new TitledPane("已完成订单", finishedContent);
+        finishedGroup.setCollapsible(false);
+        finishedGroup.getStyleClass().add("order-group");
+        finishedGroup.setPrefWidth(340);
+
+        // 相关问题区域（分组）
+        Label link1 = new Label("查询本人车票");
+        link1.getStyleClass().add("link-blue");
+        Label link2 = new Label("改签与原票问题");
+        link2.getStyleClass().add("link-blue");
+        Label link3 = new Label("抢到无座?");
+        link3.getStyleClass().add("link-blue");
+        Label link4 = new Label("查不到车票?");
+        link4.getStyleClass().add("link-blue");
+        HBox faqContent = new HBox(12);
+        faqContent.setAlignment(Pos.CENTER_LEFT);
+        faqContent.setPadding(new Insets(4, 8, 6, 8));
+        faqContent.getChildren().addAll(link1, link2, link3, link4);
+        TitledPane faqGroup = new TitledPane("相关问题", faqContent);
+        faqGroup.setCollapsible(false);
+        faqGroup.getStyleClass().add("order-group");
+        faqGroup.setPrefHeight(62);
+
+        topBar.getChildren().addAll(queryGroup, unfinishedGroup, finishedGroup, faqGroup);
+
+        // 订单数据表格
+        VBox tableBox = new VBox(0);
+        tableBox.getStyleClass().add("table-area");
+
+        TableView<OrderRowData> orderTableView = new TableView<>();
+        orderTableView.getStyleClass().add("result-table");
+        orderTableView.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+
+        String[] orderColumns = {"选择", "订单号", "订单时间", "发车时间", "车次", "发站", "到站",
+                "乘客", "票种", "席别", "车厢", "座位", "票价", "状态"};
+        double[] orderWidths = {50, 140, 140, 120, 70, 80, 80, 80, 60, 70, 50, 60, 70, 100};
+
+        for (int i = 0; i < orderColumns.length; i++) {
+            final String colName = orderColumns[i];
+            TableColumn<OrderRowData, String> col = new TableColumn<>(colName);
+            col.setCellValueFactory(data -> data.getValue().getProperty(colName));
+            col.setPrefWidth(orderWidths[i]);
+            col.setResizable(true);
+            orderTableView.getColumns().add(col);
+        }
+
+        orderTableView.setPlaceholder(new Label("暂无订单数据，请点击\"查询全部订单\"获取订单信息"));
+        VBox.setVgrow(orderTableView, Priority.ALWAYS);
+        tableBox.getChildren().add(orderTableView);
+
+        VBox.setVgrow(tableBox, Priority.ALWAYS);
+        page.getChildren().addAll(topBar, tableBox);
+        return page;
+    }
+
+    // ==================== 候补订单页面 ====================
+
+    private VBox createWaitlistPage() {
+        VBox page = new VBox(0);
+
+        // 顶部操作区：查询 + 待支付订单 + 待兑现订单（分组线框）
+        HBox topBar = new HBox(8);
+        topBar.setPadding(new Insets(8, 10, 8, 10));
+        topBar.getStyleClass().add("order-top-bar");
+
+        // 查询区域（分组）
+        Button queryWaitlistBtn = new Button("查询候补订单");
+        queryWaitlistBtn.getStyleClass().add("order-btn");
+        CheckBox processedCheck = new CheckBox("已处理");
+        HBox queryContent = new HBox(8);
+        queryContent.setAlignment(Pos.CENTER_LEFT);
+        queryContent.setPadding(new Insets(4, 8, 6, 8));
+        queryContent.getChildren().addAll(queryWaitlistBtn, processedCheck);
+        TitledPane queryGroup = new TitledPane("查询", queryContent);
+        queryGroup.setCollapsible(false);
+        queryGroup.getStyleClass().add("order-group");
+        queryGroup.setPrefWidth(220);
+
+        // 待支付订单区域（分组）
+        Button continuePayBtn = new Button("继续支付");
+        continuePayBtn.getStyleClass().add("order-btn");
+        Button cancelOrderBtn = new Button("取消订单");
+        cancelOrderBtn.getStyleClass().add("order-btn");
+        HBox pendingPayContent = new HBox(8);
+        pendingPayContent.setAlignment(Pos.CENTER_LEFT);
+        pendingPayContent.setPadding(new Insets(4, 8, 6, 8));
+        pendingPayContent.getChildren().addAll(continuePayBtn, cancelOrderBtn);
+        TitledPane pendingPayGroup = new TitledPane("待支付订单", pendingPayContent);
+        pendingPayGroup.setCollapsible(false);
+        pendingPayGroup.getStyleClass().add("order-group");
+        pendingPayGroup.setPrefWidth(200);
+
+        // 待兑现订单区域（分组）
+        Button refundOrderBtn = new Button("退单");
+        refundOrderBtn.getStyleClass().add("order-btn");
+        HBox pendingContent = new HBox(8);
+        pendingContent.setAlignment(Pos.CENTER_LEFT);
+        pendingContent.setPadding(new Insets(4, 8, 6, 8));
+        pendingContent.getChildren().add(refundOrderBtn);
+        TitledPane pendingGroup = new TitledPane("待兑现订单", pendingContent);
+        pendingGroup.setCollapsible(false);
+        pendingGroup.getStyleClass().add("order-group");
+        pendingGroup.setPrefWidth(160);
+
+        topBar.getChildren().addAll(queryGroup, pendingPayGroup, pendingGroup);
+
+        // 候补订单数据表格
+        VBox tableBox = new VBox(0);
+        tableBox.getStyleClass().add("table-area");
+
+        TableView<WaitlistRowData> waitlistTableView = new TableView<>();
+        waitlistTableView.getStyleClass().add("result-table");
+        waitlistTableView.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+
+        String[] waitlistColumns = {"选择", "候补单号", "下单日期", "截止时间", "车次信息",
+                "席别", "旅客信息", "总金额", "成功率", "状态"};
+        double[] waitlistWidths = {50, 140, 120, 120, 200, 80, 120, 80, 70, 100};
+
+        for (int i = 0; i < waitlistColumns.length; i++) {
+            final String colName = waitlistColumns[i];
+            TableColumn<WaitlistRowData, String> col = new TableColumn<>(colName);
+            col.setCellValueFactory(data -> data.getValue().getProperty(colName));
+            col.setPrefWidth(waitlistWidths[i]);
+            col.setResizable(true);
+            waitlistTableView.getColumns().add(col);
+        }
+
+        waitlistTableView.setPlaceholder(new Label("暂无候补订单数据，请点击\"查询候补订单\"获取候补信息"));
+        VBox.setVgrow(waitlistTableView, Priority.ALWAYS);
+        tableBox.getChildren().add(waitlistTableView);
+
+        VBox.setVgrow(tableBox, Priority.ALWAYS);
+        page.getChildren().addAll(topBar, tableBox);
+        return page;
     }
 
     // ==================== 占位页面 ====================
@@ -1462,6 +1658,62 @@ public class MainStage extends Stage {
         donateStage.show();
 
         logger.info("打开赞助项目弹框");
+    }
+
+    // ==================== 候补订单表格数据模型 ====================
+
+    public static class WaitlistRowData {
+        private final javafx.beans.property.SimpleMapProperty<String, String> properties =
+                new javafx.beans.property.SimpleMapProperty<>(javafx.collections.FXCollections.observableHashMap());
+
+        public void setProperty(String key, String value) {
+            properties.put(key, value);
+        }
+
+        public javafx.beans.property.MapProperty<String, String> getProperties() {
+            return properties;
+        }
+
+        public javafx.beans.binding.StringBinding getProperty(String key) {
+            return new javafx.beans.binding.StringBinding() {
+                {
+                    bind(properties);
+                }
+
+                @Override
+                protected String computeValue() {
+                    return properties.getOrDefault(key, "");
+                }
+            };
+        }
+    }
+
+    // ==================== 订单表格数据模型 ====================
+
+    public static class OrderRowData {
+        private final javafx.beans.property.SimpleMapProperty<String, String> properties =
+                new javafx.beans.property.SimpleMapProperty<>(javafx.collections.FXCollections.observableHashMap());
+
+        public void setProperty(String key, String value) {
+            properties.put(key, value);
+        }
+
+        public javafx.beans.property.MapProperty<String, String> getProperties() {
+            return properties;
+        }
+
+        public javafx.beans.binding.StringBinding getProperty(String key) {
+            return new javafx.beans.binding.StringBinding() {
+                {
+                    bind(properties);
+                }
+
+                @Override
+                protected String computeValue() {
+                    return properties.getOrDefault(key, "");
+                }
+            };
+        }
     }
 
     // ==================== 表格数据模型 ====================
