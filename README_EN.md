@@ -162,9 +162,43 @@ In the IDEA project file tree, find `build-exe.ps1`, right-click and select `Run
 
 - JDK 17+, must include `jpackage`
 - Maven 3.6+
-- WiX Toolset 3.x (required for .msi installer. Without it, only JAR is output)
+- WiX Toolset 3.x (required for .msi/.exe installer. Without it, only JAR is output)
+
+**Installing WiX Toolset (required for .exe):**
+
+1. Go to [WiX Toolset v3 Releases](https://github.com/wixtoolset/wix3/releases) and download the latest v3 version (e.g. `wix314-binaries.zip` or `.msi` installer)
+2. After installation, ensure `candle.exe` and `light.exe` are in your system PATH (default path: `C:\Program Files (x86)\WiX Toolset v3.14\bin`)
+3. **Restart your terminal**, then re-run `一键打包.bat` to generate the `.msi` installer
+
+> Without WiX Toolset, the build still succeeds but only outputs a JAR file (`dist\tickethelper-1.0.0-SNAPSHOT.jar`), which can be run directly with `java -jar`.
 
 The installer outputs to `dist/` by default. Since the installer bundles the JRE, a larger file size is expected.
+
+### Publish to GitHub Releases
+
+Since GitHub web upload is limited to 25MB, the installer (~69MB) must be uploaded via `gh` CLI:
+
+**1. Install gh CLI**
+
+Go to https://github.com/cli/cli/releases/latest and download `gh_*_windows_amd64.msi`, install it, then restart your terminal.
+
+**2. Generate GitHub Token**
+
+1. Open https://github.com/settings/tokens/new
+2. Check the **`repo`** scope (this includes all sub-permissions)
+3. Click **Generate token** and copy the generated token (starts with `ghp_`)
+
+**3. Login and Upload**
+
+```powershell
+# Login gh with your token (replace with your actual token)
+echo "ghp_XXXXXXXXXXXXXXXX" | gh auth login --with-token
+
+# Create a release and upload the installer
+gh release create v1.0.0 dist/JavaFx-TicketHelper-1.0.0.msi --title "JavaFx-TicketHelper v1.0.0" --notes "Initial release"
+```
+
+> For each new version, update the version tag and description, e.g. `v1.0.1`, `v1.1.0`, etc.
 
 ---
 

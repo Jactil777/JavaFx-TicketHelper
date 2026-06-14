@@ -1,20 +1,25 @@
 package com.jactil.javafx.tickethelper;
 
+import com.jactil.javafx.tickethelper.config.AppConfig;
 import com.jactil.javafx.tickethelper.model.UserInfo;
+import com.jactil.javafx.tickethelper.util.TimeUtil;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.geometry.Side;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.*;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
+import javafx.stage.Modality;
 import javafx.stage.Stage;
+import javafx.util.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 
 /**
  * 主界面窗口（参考 Bypass 分流抢票设计）
@@ -33,6 +38,9 @@ public class MainStage extends Stage {
     private DatePicker datePicker;
     private ComboBox<String> departTimeCombo;
     private TextArea logArea;
+
+    // 状态栏音量按钮
+    private Label volumeLabel;
 
     // 设置区域折叠状态
     private boolean settingsVisible = false;
@@ -55,11 +63,11 @@ public class MainStage extends Stage {
 
         BorderPane root = new BorderPane();
 
-        // 顶部工具栏
-        root.setTop(createTopBar());
+        // 顶部菜单栏
+        root.setTop(createMenuBar());
 
-        // 中间内容区
-        root.setCenter(createTicketPage());
+        // 中间内容区（标签页）
+        root.setCenter(createTabPane());
 
         // 底部状态栏
         root.setBottom(createStatusBar());
@@ -71,41 +79,161 @@ public class MainStage extends Stage {
         logger.info("主界面已初始化");
     }
 
-    // ==================== 顶部工具栏 ====================
+    // ==================== 顶部菜单栏 ====================
 
-    private VBox createTopBar() {
-        VBox topBox = new VBox(0);
-
-        // 第一行：菜单栏
+    private HBox createMenuBar() {
         HBox menuBar = new HBox(4);
         menuBar.setAlignment(Pos.CENTER_LEFT);
         menuBar.setPadding(new Insets(4, 8, 4, 8));
         menuBar.getStyleClass().add("top-menubar");
 
+        // 注销按钮（绑定注销逻辑）
+        Label logoutLabel = new Label("\uD83D\uDD11 注销");
+        logoutLabel.getStyleClass().add("menu-item-label");
+        logoutLabel.setOnMouseClicked(e -> {
+            logger.info("用户点击注销登录");
+            if (onLogout != null) {
+                onLogout.run();
+            }
+            close();
+        });
+        menuBar.getChildren().add(logoutLabel);
+
         String[][] menuItems = {
-                {"\uD83D\uDD11 注销/登录", "logout"},
                 {"\uD83C\uDF10 免登录打开12306官网", "open12306"},
                 {"\uD83D\uDD52 同步服务器时间", "syncTime"},
                 {"\uD83D\uDD04 检查更新", "checkUpdate"},
                 {"\u2699 设置代理", "proxy"},
-                {"\u2764 赞助与注册VIP", "vip"},
-                {"\uD83C\uDFE0 分流抢票官网", "homepage"},
         };
 
         for (String[] item : menuItems) {
             Label label = new Label(item[0]);
             label.getStyleClass().add("menu-item-label");
-            label.setOnMouseClicked(e -> logger.info("点击菜单：{}", item[1]));
+            label.setCursor(javafx.scene.Cursor.HAND);
+            if ("proxy".equals(item[1])) {
+                label.setOnMouseClicked(e -> showProxyDialog());
+            } else if ("checkUpdate".equals(item[1])) {
+                label.setOnMouseClicked(e -> showUpdateDialog());
+            } else if ("syncTime".equals(item[1])) {
+                label.setOnMouseClicked(e -> doSyncServerTime());
+            } else if ("open12306".equals(item[1])) {
+                label.setOnMouseClicked(e -> doOpen12306());
+            } else {
+                label.setOnMouseClicked(e -> logger.info("点击菜单：{}", item[1]));
+            }
             menuBar.getChildren().add(label);
         }
 
-        // 公告
-        Label noticeLabel = new Label("\uD83D\uDCE2 公告：如果公网IP被封了，可以尝试重启光猫解决！");
+        // 赞助项目（打开弹框）
+        Label donateLabel = new Label("\u2764 赞助项目");
+        donateLabel.getStyleClass().add("menu-item-label");
+        donateLabel.setCursor(javafx.scene.Cursor.HAND);
+        donateLabel.setOnMouseClicked(e -> showDonateDialog());
+        menuBar.getChildren().add(donateLabel);
+
+        // 联系作者（打开浏览器）
+        Label contactLabel = new Label("\uD83D\uDCE7 联系作者");
+        contactLabel.getStyleClass().add("menu-item-label");
+        contactLabel.setCursor(javafx.scene.Cursor.HAND);
+        contactLabel.setOnMouseClicked(e -> {
+            logger.info("联系作者QQ");
+            try {
+                // 优先尝试 QQ 协议直接唤起客户端
+                java.awt.Desktop.getDesktop().browse(java.net.URI.create("tencent://AddContact/?fromId=45&fromSubId=1&subcmd=all&uin=3054123710"));
+            } catch (Exception ex) {
+                // QQ 协议失败则打开网页版
+                try {
+                    java.awt.Desktop.getDesktop().browse(java.net.URI.create("http://wpa.qq.com/msgrd?v=3&uin=3054123710&site=qq&menu=yes"));
+                } catch (Exception ex2) {
+                    logger.error("打开QQ失败", ex2);
+                }
+            }
+        });
+        menuBar.getChildren().add(contactLabel);
+
+        // 项目地址（打开浏览器）
+        Label projectLink = new Label("\uD83C\uDFE0 项目地址");
+        projectLink.getStyleClass().add("menu-item-label");
+        projectLink.setCursor(javafx.scene.Cursor.HAND);
+        projectLink.setOnMouseClicked(e -> {
+            logger.info("打开项目地址");
+            try {
+                java.awt.Desktop.getDesktop().browse(java.net.URI.create("https://github.com/Jactil777/JavaFx-TicketHelper"));
+            } catch (Exception ex) {
+                logger.error("打开浏览器失败", ex);
+            }
+        });
+        menuBar.getChildren().add(projectLink);
+
+        // 公告（自动滚动 + 悬浮提示）
+        String[] noticeTips = {
+                "\uD83D\uDCE2 1.一个账号多处登录，将互相顶下线,影响抢票!",
+                "\uD83D\uDCE2 2.使用12306app同时提交订单，建议分开账号!",
+                "\uD83D\uDCE2 3.软件遇到间题时，请看12306官网是否正常!",
+                "\uD83D\uDCE2 4.起售直接是候补那就是没放票，不存在秒无!",
+                "\uD83D\uDCE2 5.起售不放票很正常，但是要第一时间候补支付!",
+                "\uD83D\uDCE2 6.如有问题请联系作者!",
+                "\uD83D\uDCE2 7.长时间运行软件时，慎重启改网络，建议默认!",
+                "\uD83D\uDCE2 8.如果公网IP被封了，可以尝试重启光猫解决!",
+                "\uD83D\uDCE2 9.抢票靠的是坚持，放弃就是给别人机会!",
+                "\uD83D\uDCE2 10.很多区间会限售，可以使用多站查询多几站!",
+                "\uD83D\uDCE2 11.候补兑现率和刷票不冲突，建议两者同时进行!",
+                "\uD83D\uDCE2 12.候补兑现顺序是按支付时间，建议自动支付!",
+                "\uD83D\uDCE2 13.候补按支付时间排位! 支付时间! 一秒差很多人!",
+                "\uD83D\uDCE2 14.车次列表中蓝色的车次，才支持选上下铺功能!",
+                "\uD83D\uDCE2 15.有用户认为\u201C候补还排抢吗，有些用户先候补\u201D!",
+                "\uD83D\uDCE2 16.还是很多用户抢票遇到了，不要完全依赖候补!"
+        };
+        Label noticeLabel = new Label(noticeTips[0]);
         noticeLabel.getStyleClass().add("notice-label");
+        noticeLabel.setCursor(javafx.scene.Cursor.HAND);
+        
+        // 自动滚动：每3秒切换下一条
+        final int[] noticeIndex = {0};
+        Timeline noticeTimeline = new Timeline(new KeyFrame(Duration.seconds(3), e -> {
+            noticeIndex[0] = (noticeIndex[0] + 1) % noticeTips.length;
+            noticeLabel.setText(noticeTips[noticeIndex[0]]);
+        }));
+        noticeTimeline.setCycleCount(Timeline.INDEFINITE);
+        noticeTimeline.play();
+        
+        // 鼠标悬停时暂停滚动，显示完整提示
+        Tooltip noticeTooltip = new Tooltip(
+                "1.一个账号多处登录，将互相顶下线,影响抢票!\n" +
+                "2.使用12306app同时提交订单，建议分开账号!\n" +
+                "3.软件遇到间题时，请看12306官网是否正常!\n" +
+                "4.起售直接是候补那就是没放票，不存在秒无!\n" +
+                "5.起售不放票很正常，但是要第一时间候补支付!\n" +
+                "6.如有问题请联系作者!\n" +
+                "7.长时间运行软件时，慎重启改网络，建议默认!\n" +
+                "8.如果公网IP被封了，可以尝试重启光猫解决!\n" +
+                "9.抢票靠的是坚持，放弃就是给别人机会!\n" +
+                "10.很多区间会限售，可以使用多站查询多几站!\n" +
+                "11.候补兑现率和刷票不冲突，建议两者同时进行!\n" +
+                "12.候补兑现顺序是按支付时间，建议自动支付!\n" +
+                "13.候补按支付时间排位! 支付时间! 一秒差很多人!\n" +
+                "14.车次列表中蓝色的车次，才支持选上下铺功能!\n" +
+                "15.有用户认为\u201C候补还排抢吗，有些用户先候补\u201D!\n" +
+                "16.还是很多用户抢票遇到了，不要完全依赖候补!"
+        );
+        noticeTooltip.setWrapText(true);
+        noticeTooltip.setMaxWidth(500);
+        noticeTooltip.getStyleClass().add("status-tooltip");
+        noticeTooltip.setShowDelay(javafx.util.Duration.millis(300));
+        Tooltip.install(noticeLabel, noticeTooltip);
+        
+        noticeLabel.setOnMouseEntered(e -> noticeTimeline.pause());
+        noticeLabel.setOnMouseExited(e -> noticeTimeline.play());
+        
         HBox.setHgrow(noticeLabel, Priority.ALWAYS);
         menuBar.getChildren().add(noticeLabel);
 
-        // 第二行：标签页
+        return menuBar;
+    }
+
+    // ==================== 标签页 ====================
+
+    private TabPane createTabPane() {
         TabPane tabPane = new TabPane();
         tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
         tabPane.getStyleClass().add("main-tabpane");
@@ -120,9 +248,7 @@ public class MainStage extends Stage {
         waitlistTab.setContent(createPlaceholderPage("候补订单页面", "候补订单查询、自动提交候补（待实现）"));
 
         tabPane.getTabs().addAll(ticketTab, orderTab, waitlistTab);
-
-        topBox.getChildren().addAll(menuBar, tabPane);
-        return topBox;
+        return tabPane;
     }
 
     // ==================== 抢票页面 ====================
@@ -543,9 +669,9 @@ public class MainStage extends Stage {
     // ==================== 底部状态栏 ====================
 
     private HBox createStatusBar() {
-        HBox statusBar = new HBox(16);
+        HBox statusBar = new HBox(14);
         statusBar.setAlignment(Pos.CENTER_LEFT);
-        statusBar.setPadding(new Insets(4, 10, 4, 10));
+        statusBar.setPadding(new Insets(6, 12, 6, 12));
         statusBar.getStyleClass().add("status-bar");
 
         String userDisplay = (currentUser != null && currentUser.getRealName() != null)
@@ -559,27 +685,40 @@ public class MainStage extends Stage {
         Label progressLabel = new Label("\u270F 进度:");
         progressLabel.getStyleClass().add("status-label");
 
+        // 音量开关（放在进度右边）
+        volumeLabel = new Label();
+        volumeLabel.getStyleClass().add("status-icon-label");
+        volumeLabel.setCursor(javafx.scene.Cursor.HAND);
+        volumeLabel.setPadding(new Insets(4, 10, 4, 10));
+        updateVolumeIcon();
+        volumeLabel.setOnMouseClicked(e -> toggleSound());
+        Tooltip volumeTooltip = new Tooltip("声音总开关：关闭后软件将静音，所有提示音（如抢票结果、掉线提醒）均失效，建议保持开启，以免错过重要通知！");
+        volumeTooltip.setWrapText(true);
+        volumeTooltip.setMaxWidth(450);
+        volumeTooltip.getStyleClass().add("status-tooltip");
+        volumeTooltip.setShowDelay(javafx.util.Duration.millis(300));
+        Tooltip.install(volumeLabel, volumeTooltip);
+
+        // 12306链接速度
+        Label networkLabel = new Label("\uD83D\uDCF6 [优]");
+        networkLabel.getStyleClass().add("status-icon-label");
+        networkLabel.setCursor(javafx.scene.Cursor.HAND);
+        networkLabel.setPadding(new Insets(4, 10, 4, 10));
+        Tooltip networkTooltip = new Tooltip(
+                "1.代表链接12306速度，分别为：优，良，差，极差\n" +
+                "2.链接12306速度和网速并非直接关系，网速快不一定链接就快\n" +
+                "3.链接过慢将导致提交订单时的卡顿，此处仅为测试速度\n" +
+                "4.多次测试为准，点击此处将重新测速，但不要频繁测试"
+        );
+        networkTooltip.setWrapText(true);
+        networkTooltip.setMaxWidth(450);
+        networkTooltip.getStyleClass().add("status-tooltip");
+        Tooltip.install(networkLabel, networkTooltip);
+
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        Label volumeLabel = new Label("\uD83D\uDD0A");
-        volumeLabel.getStyleClass().add("status-label");
-
-        Label networkLabel = new Label("\uD83D\uDCF6 [优]");
-        networkLabel.getStyleClass().add("status-label");
-
-        // 注销按钮
-        Button logoutBtn = new Button("注销登录");
-        logoutBtn.getStyleClass().add("btn-logout-small");
-        logoutBtn.setOnAction(e -> {
-            logger.info("用户点击注销登录");
-            if (onLogout != null) {
-                onLogout.run();
-            }
-            close();
-        });
-
-        statusBar.getChildren().addAll(accountLabel, pushLabel, progressLabel, spacer, volumeLabel, networkLabel, logoutBtn);
+        statusBar.getChildren().addAll(accountLabel, pushLabel, progressLabel, volumeLabel, networkLabel, spacer);
         return statusBar;
     }
 
@@ -616,6 +755,713 @@ public class MainStage extends Stage {
         settingsArea.setVisible(settingsVisible);
         settingsArea.setManaged(settingsVisible);
         logger.info("设置区域：{}", settingsVisible ? "展开" : "折叠");
+    }
+
+    // ==================== 声音开关 ====================
+
+    /** 更新音量图标（根据 AppConfig 中的声音开关状态） */
+    private void updateVolumeIcon() {
+        if (volumeLabel == null) return;
+        AppConfig config = AppConfig.getInstance();
+        if (config.isSoundEnabled()) {
+            // 开启状态：喇叭图标
+            volumeLabel.setText("\uD83D\uDD0A");
+            volumeLabel.setStyle("-fx-text-fill: #333333;");
+        } else {
+            // 关闭状态：静音图标（喇叭+叉）
+            volumeLabel.setText("\uD83D\uDD07");
+            volumeLabel.setStyle("-fx-text-fill: #d32f2f;");
+        }
+    }
+
+    /** 切换声音开关状态 */
+    private void toggleSound() {
+        AppConfig config = AppConfig.getInstance();
+        boolean newState = !config.isSoundEnabled();
+        config.setSoundEnabled(newState);
+        updateVolumeIcon();
+        logger.info("声音总开关：{}", newState ? "开启" : "关闭");
+    }
+
+    // ==================== 免登录打开12306官网 ====================
+
+    private static final String HOME_URL = "https://kyfw.12306.cn/otn/view/index.html";
+
+    private void doOpen12306() {
+        // 使用 Selenium 启动真实浏览器，注入 Cookie 实现免登录
+        // 优先级：Edge（Windows自带）> Chrome > 系统默认浏览器
+        new Thread(() -> {
+            org.openqa.selenium.WebDriver driver = null;
+            java.util.List<okhttp3.Cookie> okCookies =
+                    com.jactil.javafx.tickethelper.util.HttpClientUtil.getAllCookies();
+            // 每次使用唯一临时目录，避免多实例冲突
+            String sessionId = java.util.UUID.randomUUID().toString().substring(0, 8);
+            String tmpDir = System.getProperty("java.io.tmpdir") + "/tickethelper-" + sessionId;
+
+            // 依次尝试 Edge -> Chrome
+            String[] browsers = {"edge", "chrome"};
+            for (String browser : browsers) {
+                try {
+                    if ("edge".equals(browser)) {
+                        logger.info("[浏览器] 尝试启动 Edge...");
+                        org.openqa.selenium.edge.EdgeOptions options = new org.openqa.selenium.edge.EdgeOptions();
+                        options.addArguments("--user-data-dir=" + tmpDir);
+                        options.addArguments("--no-first-run");
+                        options.addArguments("--no-default-browser-check");
+                        options.addArguments("--disable-blink-features=AutomationControlled");
+                        options.setExperimentalOption("excludeSwitches", java.util.Arrays.asList("enable-automation"));
+                        driver = new org.openqa.selenium.edge.EdgeDriver(options);
+                    } else {
+                        logger.info("[浏览器] 尝试启动 Chrome...");
+                        org.openqa.selenium.chrome.ChromeOptions options = new org.openqa.selenium.chrome.ChromeOptions();
+                        options.addArguments("--user-data-dir=" + tmpDir);
+                        options.addArguments("--no-first-run");
+                        options.addArguments("--no-default-browser-check");
+                        options.addArguments("--disable-blink-features=AutomationControlled");
+                        options.setExperimentalOption("excludeSwitches", java.util.Arrays.asList("enable-automation"));
+                        driver = new org.openqa.selenium.chrome.ChromeDriver(options);
+                    }
+                    logger.info("[浏览器] {} 已启动", browser);
+                    break; // 启动成功，跳出循环
+                } catch (Exception e) {
+                    logger.warn("[浏览器] {} 启动失败: {}", browser, e.getMessage());
+                    if (driver != null) {
+                        try { driver.quit(); } catch (Exception ignored) {}
+                        driver = null;
+                    }
+                }
+            }
+
+            if (driver == null) {
+                // 所有浏览器都失败，回退到系统默认浏览器
+                logger.info("[浏览器] 未找到可用的 Edge/Chrome，回退到系统默认浏览器");
+                try {
+                    java.awt.Desktop.getDesktop().browse(java.net.URI.create(HOME_URL));
+                    // 提示用户需要手动登录
+                    javafx.application.Platform.runLater(() -> {
+                        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                        alert.setTitle("提示");
+                        alert.setHeaderText(null);
+                        alert.setContentText("已使用系统默认浏览器打开12306。\n由于无法自动注入登录信息，请在浏览器中手动登录。\n\n建议安装 Edge 或 Chrome 浏览器以获得免登录体验。");
+                        alert.showAndWait();
+                    });
+                } catch (Exception ex) {
+                    logger.error("[浏览器] 打开系统浏览器也失败", ex);
+                    javafx.application.Platform.runLater(() -> {
+                        Alert alert = new Alert(Alert.AlertType.ERROR);
+                        alert.setTitle("错误");
+                        alert.setHeaderText(null);
+                        alert.setContentText("无法打开浏览器，请手动访问 https://kyfw.12306.cn");
+                        alert.showAndWait();
+                    });
+                }
+                return;
+            }
+
+            try {
+                // 先访问 12306 域名（必须先访问域名才能设置该域名的 Cookie）
+                driver.get("https://kyfw.12306.cn");
+
+                // 注入 OkHttp 的所有 Cookie
+                logger.info("[浏览器] 获取到 {} 个 Cookie，开始注入", okCookies.size());
+                org.openqa.selenium.WebDriver.Options manage = driver.manage();
+                for (okhttp3.Cookie c : okCookies) {
+                    try {
+                        org.openqa.selenium.Cookie seleniumCookie = new org.openqa.selenium.Cookie(
+                                c.name(),
+                                c.value(),
+                                c.domain() != null ? c.domain() : ".12306.cn",
+                                "/",
+                                new java.util.Date(c.expiresAt()),
+                                c.secure(),
+                                c.httpOnly()
+                        );
+                        manage.addCookie(seleniumCookie);
+                        logger.debug("[浏览器] 注入 Cookie: {}", c.name());
+                    } catch (Exception e) {
+                        logger.warn("[浏览器] Cookie 注入失败 [{}]: {}", c.name(), e.getMessage());
+                    }
+                }
+                logger.info("[浏览器] Cookie 注入完成，正在跳转到首页...");
+
+                // 导航到 12306 首页
+                driver.get(HOME_URL);
+                logger.info("[浏览器] 已导航到 12306 首页");
+
+            } catch (Exception e) {
+                logger.error("[浏览器] 操作失败: {}", e.getMessage(), e);
+                try { driver.quit(); } catch (Exception ignored) {}
+            }
+        }, "browser-12306").start();
+    }
+
+    // ==================== 同步服务器时间 ====================
+
+    private void doSyncServerTime() {
+        new Thread(() -> {
+            try {
+                long[] times = TimeUtil.syncServerTime();
+                long serverTime = times[0];
+                long localTime = times[1];
+
+                java.time.LocalDateTime serverLdt = java.time.LocalDateTime.ofInstant(
+                        java.time.Instant.ofEpochMilli(serverTime), java.time.ZoneId.systemDefault());
+                java.time.LocalDateTime localLdt = java.time.LocalDateTime.ofInstant(
+                        java.time.Instant.ofEpochMilli(localTime), java.time.ZoneId.systemDefault());
+
+                java.time.format.DateTimeFormatter fmt =
+                        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
+
+                logger.info("[网络时间]：{}", serverLdt.format(fmt));
+                logger.info("[本机时间]：{}", localLdt.format(fmt));
+                logger.info("[同步成功]已完成自动同步本机时间。");
+            } catch (Exception e) {
+                logger.error("[同步失败]服务器时间同步异常：{}", e.getMessage());
+            }
+        }, "sync-server-time").start();
+    }
+
+    // ==================== 检查更新弹框 ====================
+
+    private void showUpdateDialog() {
+        Stage updateStage = new Stage();
+        updateStage.initModality(Modality.APPLICATION_MODAL);
+        updateStage.initOwner(this);
+        updateStage.setTitle("\uD83D\uDD04 检查更新");
+        updateStage.setResizable(false);
+
+        String currentVersion = AppConfig.APP_VERSION;
+        String latestVersion = "检测中...";
+        String changelog = "正在从 GitHub 获取更新日志...";
+        boolean hasUpdate = false;
+
+        // 同步获取所有 Release 记录
+        try {
+            java.net.URL url = new java.net.URL(AppConfig.GITHUB_API_RELEASES);
+            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("Accept", "application/vnd.github.v3+json");
+            conn.setRequestProperty("User-Agent", "JavaFx-TicketHelper");
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(10000);
+
+            if (conn.getResponseCode() == 200) {
+                String body;
+                try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(conn.getInputStream(), "UTF-8"))) {
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        sb.append(line);
+                    }
+                    body = sb.toString();
+                }
+
+                // 解析 Release 数组
+                java.util.List<String[]> releases = parseReleases(body);
+                if (!releases.isEmpty()) {
+                    // 第一个是最新版本
+                    String[] latest = releases.get(0);
+                    latestVersion = latest[0];
+                    hasUpdate = compareVersions(latestVersion, currentVersion) > 0;
+
+                    // 格式化全部更新日志
+                    StringBuilder log = new StringBuilder();
+                    for (int i = 0; i < releases.size(); i++) {
+                        String[] rel = releases.get(i);
+                        if (i > 0) log.append("\n");
+                        log.append("版本：[").append(rel[0]).append("]\n");
+                        log.append("时间：").append(rel[1]).append("\n");
+                        log.append("内容：\n").append(rel[2]);
+                    }
+                    changelog = log.toString();
+                } else {
+                    changelog = "暂无发布记录";
+                }
+            } else {
+                changelog = "获取失败，HTTP " + conn.getResponseCode();
+            }
+            conn.disconnect();
+        } catch (Exception e) {
+            logger.error("检查更新失败", e);
+            changelog = "网络请求失败：" + e.getMessage() + "\n\n请检查网络连接后重试。";
+        }
+
+        final String finalLatestVersion = latestVersion;
+        final String finalChangelog = changelog;
+        final boolean finalHasUpdate = hasUpdate;
+
+        VBox root = new VBox(0);
+        root.getStyleClass().add("update-root");
+
+        // 顶部版本信息
+        HBox versionBox = new HBox(20);
+        versionBox.setPadding(new Insets(12, 16, 8, 16));
+        versionBox.setAlignment(Pos.CENTER_LEFT);
+
+        Label currentVerLabel = new Label("当前版本：" + currentVersion);
+        currentVerLabel.getStyleClass().add("update-version-label");
+
+        Label latestVerLabel = new Label("最新版本：" + finalLatestVersion);
+        latestVerLabel.getStyleClass().add("update-version-label");
+
+        versionBox.getChildren().addAll(currentVerLabel, latestVerLabel);
+        root.getChildren().add(versionBox);
+
+        // 日志标题
+        Label logTitle = new Label("日志记录：");
+        logTitle.getStyleClass().add("update-log-title");
+        logTitle.setPadding(new Insets(4, 16, 4, 16));
+        root.getChildren().add(logTitle);
+
+        // 更新日志内容
+        TextArea logArea = new TextArea(finalChangelog);
+        logArea.getStyleClass().add("update-log-area");
+        logArea.setEditable(false);
+        logArea.setWrapText(true);
+        logArea.setPrefHeight(260);
+
+        VBox logBox = new VBox(logArea);
+        logBox.setPadding(new Insets(0, 16, 12, 16));
+        root.getChildren().add(logBox);
+
+        // 底部按钮
+        HBox btnBox = new HBox(12);
+        btnBox.setAlignment(Pos.CENTER);
+        btnBox.setPadding(new Insets(0, 16, 14, 16));
+
+        Button downloadBtn = new Button("安装包下载");
+        downloadBtn.getStyleClass().add("update-btn-download");
+        downloadBtn.setPrefWidth(120);
+        downloadBtn.setOnAction(e -> {
+            try {
+                java.awt.Desktop.getDesktop().browse(java.net.URI.create(AppConfig.GITHUB_RELEASES_URL));
+            } catch (Exception ex) {
+                logger.error("打开浏览器失败", ex);
+            }
+        });
+
+        Button autoUpdateBtn = new Button("自动更新");
+        autoUpdateBtn.getStyleClass().add("update-btn-auto");
+        autoUpdateBtn.setPrefWidth(120);
+        autoUpdateBtn.setDisable(true);
+        autoUpdateBtn.setOnAction(e -> {});
+
+        Button closeBtn = new Button(finalHasUpdate ? "暂不更新" : "关闭");
+        closeBtn.getStyleClass().add("update-btn-close");
+        closeBtn.setPrefWidth(100);
+        closeBtn.setOnAction(e -> updateStage.close());
+
+        btnBox.getChildren().addAll(downloadBtn, autoUpdateBtn, closeBtn);
+        root.getChildren().add(btnBox);
+
+        // 底部提示
+        Label bottomTip = new Label(finalHasUpdate ? "\u2B50 发现新版本，请下载最新版本安装包进行更新！" : "\u2705 当前已是最新版本，无需更新。");
+        bottomTip.getStyleClass().add(finalHasUpdate ? "update-tip-new" : "update-tip-latest");
+        bottomTip.setWrapText(true);
+        bottomTip.setMaxWidth(Double.MAX_VALUE);
+        bottomTip.setPadding(new Insets(8, 16, 10, 16));
+        root.getChildren().add(bottomTip);
+
+        Scene scene = new Scene(root, 520, 420);
+        scene.getStylesheets().add(getClass().getResource("/css/style.css").toExternalForm());
+        updateStage.setScene(scene);
+        updateStage.show();
+
+        logger.info("打开检查更新弹框，当前版本：{}，最新版本：{}", currentVersion, finalLatestVersion);
+    }
+
+    /** 解析 GitHub Releases JSON 数组，返回 List<[版本号, 发布时间, 更新内容]> */
+    private java.util.List<String[]> parseReleases(String json) {
+        java.util.List<String[]> list = new java.util.ArrayList<>();
+        // 找到 [ 开始
+        int arrStart = json.indexOf('[');
+        if (arrStart < 0) return list;
+        // 逐个解析 { ... } 对象
+        int pos = arrStart + 1;
+        while (pos < json.length()) {
+            int objStart = json.indexOf('{', pos);
+            if (objStart < 0) break;
+            int objEnd = findMatchingBrace(json, objStart);
+            if (objEnd < 0) break;
+            String obj = json.substring(objStart, objEnd + 1);
+
+            String tagName = extractJsonField(obj, "tag_name");
+            String publishedAt = extractJsonField(obj, "published_at");
+            String body = extractJsonField(obj, "body");
+
+            if (tagName != null) {
+                String version = tagName.startsWith("v") ? tagName.substring(1) : tagName;
+                String date = "";
+                if (publishedAt != null && publishedAt.length() >= 10) {
+                    date = publishedAt.substring(0, 10); // yyyy-MM-dd
+                }
+                String content = "";
+                if (body != null && !body.isEmpty()) {
+                    content = body.replace("\\n", "\n").replace("\\r", "").replace("\"", "");
+                } else {
+                    content = "暂无更新说明";
+                }
+                list.add(new String[]{version, date, content});
+            }
+            pos = objEnd + 1;
+        }
+        return list;
+    }
+
+    /** 找到与 start 处 { 匹配的 } 位置 */
+    private int findMatchingBrace(String s, int start) {
+        int depth = 0;
+        boolean inString = false;
+        for (int i = start; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '"' && (i == 0 || s.charAt(i - 1) != '\\')) {
+                inString = !inString;
+            } else if (!inString) {
+                if (c == '{') depth++;
+                else if (c == '}') {
+                    depth--;
+                    if (depth == 0) return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    /** 从简单 JSON 字符串中提取字段值 */
+    private String extractJsonField(String json, String field) {
+        String key = "\"" + field + "\"";
+        int idx = json.indexOf(key);
+        if (idx < 0) return null;
+        int start = json.indexOf(':', idx) + 1;
+        // 跳过空白
+        while (start < json.length() && Character.isWhitespace(json.charAt(start))) start++;
+        if (start >= json.length()) return null;
+        if (json.charAt(start) == '"') {
+            // 字符串值
+            int end = json.indexOf('"', start + 1);
+            // 处理转义
+            while (end > 0 && json.charAt(end - 1) == '\\') {
+                end = json.indexOf('"', end + 1);
+            }
+            if (end < 0) return null;
+            return json.substring(start + 1, end);
+        } else if (json.charAt(start) == 'n' && json.startsWith("null", start)) {
+            return null;
+        }
+        return null;
+    }
+
+    /** 比较版本号，返回 >0 表示 v1 更新，<0 表示 v2 更新，0 表示相同 */
+    private int compareVersions(String v1, String v2) {
+        String[] parts1 = v1.split("[.\\-]");
+        String[] parts2 = v2.split("[.\\-]");
+        int len = Math.max(parts1.length, parts2.length);
+        for (int i = 0; i < len; i++) {
+            int n1 = i < parts1.length ? parseVersionPart(parts1[i]) : 0;
+            int n2 = i < parts2.length ? parseVersionPart(parts2[i]) : 0;
+            if (n1 != n2) return n1 - n2;
+        }
+        return 0;
+    }
+
+    private int parseVersionPart(String s) {
+        try {
+            return Integer.parseInt(s.replaceAll("[^0-9]", ""));
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    // ==================== 代理设置弹框 ====================
+
+    private void showProxyDialog() {
+        Stage proxyStage = new Stage();
+        proxyStage.initModality(Modality.APPLICATION_MODAL);
+        proxyStage.initOwner(this);
+        proxyStage.setTitle("\u2699 网络设置");
+        proxyStage.setResizable(false);
+
+        VBox root = new VBox(0);
+        root.getStyleClass().add("proxy-root");
+
+        // 标题栏区域（代理设置标签）
+        VBox tabArea = new VBox(0);
+        tabArea.setPadding(new Insets(8, 12, 0, 12));
+        Label tabLabel = new Label("代理设置");
+        tabLabel.getStyleClass().add("proxy-tab-label");
+        tabArea.getChildren().add(tabLabel);
+        root.getChildren().add(tabArea);
+
+        // 表单区域
+        VBox formBox = new VBox(10);
+        formBox.setPadding(new Insets(16, 20, 12, 20));
+
+        // 第一行：协议值 + 超时 + 使用系统代理
+        HBox row1 = new HBox(16);
+        row1.setAlignment(Pos.CENTER_LEFT);
+
+        Label protocolLabel = new Label("协议值：");
+        protocolLabel.setPrefWidth(60);
+        ComboBox<String> protocolCombo = new ComboBox<>();
+        protocolCombo.getItems().addAll("Https代理", "Socks5代理");
+        protocolCombo.setValue("Https代理");
+        protocolCombo.setPrefWidth(130);
+
+        Label timeoutLabel = new Label("超时：");
+        Spinner<Integer> timeoutSpinner = new Spinner<>(100, 10000, 1500, 100);
+        timeoutSpinner.setPrefWidth(80);
+        timeoutSpinner.setEditable(true);
+
+        CheckBox useSystemProxy = new CheckBox("使用系统代理");
+        useSystemProxy.setSelected(false);
+
+        row1.getChildren().addAll(protocolLabel, protocolCombo, timeoutLabel, timeoutSpinner, useSystemProxy);
+
+        // 第二行：IP地址 + 端口 + 测试
+        HBox row2 = new HBox(16);
+        row2.setAlignment(Pos.CENTER_LEFT);
+
+        Label ipLabel = new Label("IP地址：");
+        ipLabel.setPrefWidth(60);
+        TextField ipField = new TextField();
+        ipField.setPrefWidth(130);
+
+        Label portLabel = new Label("端口：");
+        TextField portField = new TextField();
+        portField.setPrefWidth(80);
+
+        Button testBtn = new Button("测试");
+        testBtn.setPrefWidth(70);
+        testBtn.setOnAction(e -> logger.info("测试代理连接"));
+
+        row2.getChildren().addAll(ipLabel, ipField, portLabel, portField, testBtn);
+
+        // 第三行：用户名 + 密码
+        HBox row3 = new HBox(16);
+        row3.setAlignment(Pos.CENTER_LEFT);
+
+        Label userLabel = new Label("用户名：");
+        userLabel.setPrefWidth(60);
+        TextField userField = new TextField();
+        userField.setPrefWidth(130);
+
+        Label passLabel = new Label("密码：");
+        PasswordField passField = new PasswordField();
+        passField.setPrefWidth(80);
+
+        Label optionalLabel = new Label("(此行可选)");
+        optionalLabel.getStyleClass().add("proxy-optional-label");
+
+        row3.getChildren().addAll(userLabel, userField, passLabel, passField, optionalLabel);
+
+        // 第四行：IP网址 + 正则提取
+        HBox row4 = new HBox(16);
+        row4.setAlignment(Pos.CENTER_LEFT);
+
+        Label urlLabel = new Label("IP网址：");
+        urlLabel.setPrefWidth(60);
+        ComboBox<String> urlCombo = new ComboBox<>();
+        urlCombo.getItems().addAll(
+                "http://www.xicidaili.com/nt/1",
+                "http://www.kuaidaili.com/proxylist/1",
+                "http://www.cz88.net/proxy"
+        );
+        urlCombo.setValue("http://www.xicidaili.com/nt/1");
+        urlCombo.setPrefWidth(220);
+        urlCombo.setEditable(true);
+
+        Button regexBtn = new Button("正则提取");
+        regexBtn.setPrefWidth(70);
+        regexBtn.setOnAction(e -> logger.info("正则提取代理IP"));
+
+        row4.getChildren().addAll(urlLabel, urlCombo, regexBtn);
+
+        formBox.getChildren().addAll(row1, row2, row3, row4);
+        root.getChildren().add(formBox);
+
+        // 表格区域
+        TableView<javafx.collections.ObservableMap<String, String>> proxyTable = new TableView<>();
+        proxyTable.getStyleClass().add("proxy-table");
+
+        TableColumn<javafx.collections.ObservableMap<String, String>, String> colIp = new TableColumn<>("代理IP地址");
+        colIp.setPrefWidth(180);
+        colIp.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(
+                data.getValue().getOrDefault("ip", "")));
+
+        TableColumn<javafx.collections.ObservableMap<String, String>, String> colPort = new TableColumn<>("端口");
+        colPort.setPrefWidth(80);
+        colPort.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(
+                data.getValue().getOrDefault("port", "")));
+
+        TableColumn<javafx.collections.ObservableMap<String, String>, String> colDetail = new TableColumn<>("详细信息");
+        colDetail.setPrefWidth(200);
+        colDetail.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(
+                data.getValue().getOrDefault("detail", "")));
+
+        proxyTable.getColumns().addAll(colIp, colPort, colDetail);
+        proxyTable.setPrefHeight(200);
+        proxyTable.setPlaceholder(new Label("暂无代理IP"));
+
+        VBox tableBox = new VBox(proxyTable);
+        tableBox.setPadding(new Insets(0, 20, 12, 20));
+        root.getChildren().add(tableBox);
+
+        // 底部按钮
+        HBox btnBox = new HBox(16);
+        btnBox.setAlignment(Pos.CENTER);
+        btnBox.setPadding(new Insets(0, 20, 12, 20));
+
+        Button batchTestBtn = new Button("批量测试");
+        batchTestBtn.setPrefWidth(90);
+        batchTestBtn.setOnAction(e -> logger.info("批量测试代理"));
+
+        Button enableBtn = new Button("开启");
+        enableBtn.setPrefWidth(90);
+        enableBtn.setOnAction(e -> logger.info("开启代理"));
+
+        Button closeBtn = new Button("关闭");
+        closeBtn.setPrefWidth(90);
+        closeBtn.setOnAction(e -> proxyStage.close());
+
+        btnBox.getChildren().addAll(batchTestBtn, enableBtn, closeBtn);
+        root.getChildren().add(btnBox);
+
+        // 底部提示
+        Label bottomTip = new Label("网络正常不需要设置，不建议使用公共代理，不稳定影响抢票！");
+        bottomTip.getStyleClass().add("proxy-bottom-tip");
+        bottomTip.setWrapText(true);
+        bottomTip.setMaxWidth(Double.MAX_VALUE);
+        root.getChildren().add(bottomTip);
+
+        Scene scene = new Scene(root, 560, 490);
+        scene.getStylesheets().add(getClass().getResource("/css/style.css").toExternalForm());
+        proxyStage.setScene(scene);
+        proxyStage.show();
+
+        logger.info("打开代理设置弹框");
+    }
+
+    // ==================== 赞助项目弹框 ====================
+
+    private void showDonateDialog() {
+        Stage donateStage = new Stage();
+        donateStage.initModality(Modality.APPLICATION_MODAL);
+        donateStage.initOwner(this);
+        donateStage.setTitle("\u2764 赞助项目");
+        donateStage.setResizable(false);
+
+        VBox root = new VBox(0);
+        root.getStyleClass().add("donate-root");
+
+        // 顶部提示条（铺满宽度）
+        Label topNotice = new Label("抢票助手完全免费，仅依靠用户赞助维持，赞助不等于有票，请勿盲目赞助，认为赞助了必须抢到票的请勿赞助。");
+        topNotice.getStyleClass().add("donate-top-notice");
+        topNotice.setWrapText(true);
+        topNotice.setMaxWidth(Double.MAX_VALUE);
+        root.getChildren().add(topNotice);
+
+        // 主内容区（铺满宽度）
+        VBox mainContent = new VBox(0);
+        mainContent.setPadding(new Insets(32, 40, 32, 40));
+
+        // 标题
+        Label mainTitle = new Label("\u2764 感谢您的支持");
+        mainTitle.getStyleClass().add("donate-main-title");
+        mainContent.getChildren().add(mainTitle);
+
+        // 说明文字
+        Label descTitle = new Label("如果您在使用后感觉抢票助手帮助到了您，并愿意支持项目的开发及维护工作，可以使用微信或支付宝扫码赞助任意金额。");
+        descTitle.setWrapText(true);
+        descTitle.setMaxWidth(740);
+        descTitle.getStyleClass().add("donate-desc");
+        mainContent.getChildren().add(descTitle);
+
+        // 间距
+        Region spacer1 = new Region();
+        spacer1.setPrefHeight(20);
+        mainContent.getChildren().add(spacer1);
+
+        // 操作步骤
+        Label stepsTitle = new Label("操作步骤");
+        stepsTitle.getStyleClass().add("donate-steps-title");
+        mainContent.getChildren().add(stepsTitle);
+
+        Label descSteps = new Label("1、微信或支付宝扫描下方二维码\n2、输入任意金额赞助即可");
+        descSteps.setWrapText(true);
+        descSteps.setMaxWidth(740);
+        descSteps.getStyleClass().add("donate-desc");
+        mainContent.getChildren().add(descSteps);
+
+        // 间距
+        Region spacer2 = new Region();
+        spacer2.setPrefHeight(20);
+        mainContent.getChildren().add(spacer2);
+
+        // 注意
+        Label descNote = new Label("\u26A0 注意：赞助不代表一定能抢到票，抢票成功率受多种因素影响，请理性赞助。");
+        descNote.setWrapText(true);
+        descNote.setMaxWidth(740);
+        descNote.getStyleClass().add("donate-desc-note");
+        mainContent.getChildren().add(descNote);
+
+        // 间距
+        Region spacer3 = new Region();
+        spacer3.setPrefHeight(24);
+        mainContent.getChildren().add(spacer3);
+
+        // 二维码区域标题
+        Label qrSectionTitle = new Label("扫码赞助");
+        qrSectionTitle.getStyleClass().add("donate-qr-section-title");
+        mainContent.getChildren().add(qrSectionTitle);
+
+        // 两个二维码并排（左右对称居中）
+        HBox qrRow = new HBox(0);
+        qrRow.setAlignment(Pos.CENTER);
+        qrRow.setPadding(new Insets(16, 0, 0, 0));
+
+        // 支付宝（Logo样式：蓝色圆角方块+白字"支"+"支付宝"）
+        VBox alipayBox = new VBox(12);
+        alipayBox.setAlignment(Pos.CENTER);
+        alipayBox.setPrefWidth(370);
+        HBox alipayLogo = new HBox(6);
+        alipayLogo.setAlignment(Pos.CENTER);
+        Label alipayIcon = new Label("\u652F");
+        alipayIcon.getStyleClass().add("donate-alipay-icon");
+        Label alipayText = new Label("支付宝");
+        alipayText.getStyleClass().add("donate-qr-label-alipay");
+        alipayLogo.getChildren().addAll(alipayIcon, alipayText);
+        ImageView alipayImage = new ImageView(getClass().getResource("/images/zhifubao_shoukuanma.jpg").toExternalForm());
+        alipayImage.setFitWidth(220);
+        alipayImage.setFitHeight(220);
+        alipayImage.setPreserveRatio(true);
+        alipayImage.getStyleClass().add("donate-qr-image");
+        alipayBox.getChildren().addAll(alipayLogo, alipayImage);
+
+        // 微信
+        VBox wechatBox = new VBox(12);
+        wechatBox.setAlignment(Pos.CENTER);
+        wechatBox.setPrefWidth(370);
+        Label wechatLabel = new Label("\uD83D\uDCAC 微信");
+        wechatLabel.getStyleClass().add("donate-qr-label-wechat");
+        ImageView wechatImage = new ImageView(getClass().getResource("/images/weixin_shoukuanma.jpg").toExternalForm());
+        wechatImage.setFitWidth(220);
+        wechatImage.setFitHeight(220);
+        wechatImage.setPreserveRatio(true);
+        wechatImage.getStyleClass().add("donate-qr-image");
+        wechatBox.getChildren().addAll(wechatLabel, wechatImage);
+
+        qrRow.getChildren().addAll(alipayBox, wechatBox);
+        mainContent.getChildren().add(qrRow);
+
+        root.getChildren().add(mainContent);
+
+        Scene scene = new Scene(root, 900, 560);
+        scene.getStylesheets().add(getClass().getResource("/css/style.css").toExternalForm());
+        donateStage.setScene(scene);
+        donateStage.show();
+
+        logger.info("打开赞助项目弹框");
     }
 
     // ==================== 表格数据模型 ====================

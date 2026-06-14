@@ -19,4 +19,9 @@ credentials.properties
 
 # Logs
 *.log
-./dist
+
+# Build output
+dist/
+
+# Misc
+备忘.txt

@@ -30,27 +30,63 @@ Write-Host "  $mvnVersionLine" -ForegroundColor Green
 # 3. Check WiX Toolset
 Write-Host "`n[3/6] Checking WiX Toolset..." -ForegroundColor Yellow
 $wixFound = $false
+
+# 方式1：检查 PATH 中是否已有 candle
 $candleCmd = Get-Command candle -ErrorAction SilentlyContinue
 if ($candleCmd) {
-    Write-Host "  WiX found in PATH" -ForegroundColor Green
+    Write-Host "  WiX found in PATH: $($candleCmd.Source)" -ForegroundColor Green
     $wixFound = $true
-} else {
-    $possiblePaths = @(
-        "C:\Program Files (x86)\WiX Toolset v3.14\bin",
-        "C:\Program Files (x86)\WiX Toolset v3.11\bin",
-        "C:\Program Files\WiX Toolset v3.14\bin",
-        "C:\Program Files\WiX Toolset v3.11\bin"
+}
+
+# 方式2：从 Windows 注册表查找 WiX 安装路径
+if (-not $wixFound) {
+    $regPaths = @(
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+        "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
     )
-    foreach ($path in $possiblePaths) {
-        $candlePath = Join-Path $path "candle.exe"
-        if (Test-Path $candlePath) {
-            Write-Host "  WiX detected: $path" -ForegroundColor Green
-            $env:PATH = "$path;$env:PATH"
-            $wixFound = $true
-            break
+    foreach ($regRoot in $regPaths) {
+        if (Test-Path $regRoot) {
+            $wixReg = Get-ChildItem $regRoot -ErrorAction SilentlyContinue |
+                Where-Object { $_.GetValue("DisplayName") -like "*WiX*" } |
+                Select-Object -First 1
+            if ($wixReg) {
+                $installDir = $wixReg.GetValue("InstallLocation")
+                if ($installDir -and (Test-Path (Join-Path $installDir "bin\candle.exe"))) {
+                    $wixBinPath = Join-Path $installDir "bin"
+                    Write-Host "  WiX detected (registry): $wixBinPath" -ForegroundColor Green
+                    $env:PATH = "$wixBinPath;$env:PATH"
+                    $wixFound = $true
+                    break
+                }
+            }
         }
     }
 }
+
+# 方式3：搜索常见安装目录（含自定义路径）
+if (-not $wixFound) {
+    $searchRoots = @(
+        "C:\Program Files (x86)",
+        "C:\Program Files",
+        "D:\Program Files (x86)",
+        "D:\Program Files",
+        "$env:LOCALAPPDATA\Programs"
+    )
+    foreach ($root in $searchRoots) {
+        if (Test-Path $root) {
+            $found = Get-ChildItem -Path $root -Filter "candle.exe" -Recurse -Depth 3 -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) {
+                $wixBinPath = $found.DirectoryName
+                Write-Host "  WiX detected (search): $wixBinPath" -ForegroundColor Green
+                $env:PATH = "$wixBinPath;$env:PATH"
+                $wixFound = $true
+                break
+            }
+        }
+    }
+}
+
 if (-not $wixFound) {
     Write-Host "  WARN: WiX Toolset not found, will only output JAR" -ForegroundColor Yellow
     Write-Host "  Download: https://github.com/wixtoolset/wix3/releases" -ForegroundColor Cyan
@@ -61,10 +97,58 @@ Write-Host "`n[4/6] Cleaning old files..." -ForegroundColor Yellow
 
 # Copy icon to temp location before cleaning (avoids file lock issues)
 $iconSource = "src/main/resources/images/JavaFx-TicketHelper-iocn.png"
-$iconTemp = "$env:TEMP/tickethelper-icon.png"
+$iconTempPng = "$env:TEMP/tickethelper-icon.png"
+$iconTempIco = "$env:TEMP/tickethelper-icon.ico"
+$iconForJpackage = $iconTempIco
+
 if (Test-Path $iconSource) {
-    Copy-Item -Path $iconSource -Destination $iconTemp -Force
+    Copy-Item -Path $iconSource -Destination $iconTempPng -Force
     Write-Host "  Icon copied to temp" -ForegroundColor Gray
+
+    # Convert PNG to ICO (jpackage on Windows requires proper .ico format)
+    try {
+        Add-Type -AssemblyName System.Drawing
+        $bmp = [System.Drawing.Bitmap]::new($iconTempPng)
+        # Resize to 256x256
+        $resized = [System.Drawing.Bitmap]::new($bmp, 256, 256)
+
+        # Extract PNG bytes
+        $pngStream = [System.IO.MemoryStream]::new()
+        $resized.Save($pngStream, [System.Drawing.Imaging.ImageFormat]::Png)
+        $pngBytes = $pngStream.ToArray()
+        $pngStream.Close()
+
+        # Write proper ICO file: 6-byte header + 16-byte entry + PNG data
+        $icoStream = [System.IO.FileStream]::new($iconTempIco, [System.IO.FileMode]::Create)
+        $icoWriter = [System.IO.BinaryWriter]::new($icoStream)
+        $dataOffset = 22  # 6 (header) + 16 (entry)
+        # ICO header
+        $icoWriter.Write([uint16]0)       # Reserved
+        $icoWriter.Write([uint16]1)       # Type: ICO
+        $icoWriter.Write([uint16]1)       # Image count
+        # ICO entry
+        $icoWriter.Write([byte]0)         # Width (0 = 256)
+        $icoWriter.Write([byte]0)         # Height (0 = 256)
+        $icoWriter.Write([byte]0)         # Color palette
+        $icoWriter.Write([byte]0)         # Reserved
+        $icoWriter.Write([uint16]1)       # Color planes
+        $icoWriter.Write([uint16]32)      # Bits per pixel
+        $icoWriter.Write([uint32]$pngBytes.Length)  # Data size
+        $icoWriter.Write([uint32]$dataOffset)       # Data offset
+        # PNG image data
+        $icoWriter.Write($pngBytes)
+        $icoWriter.Close()
+        $icoStream.Close()
+        $resized.Dispose()
+        $bmp.Dispose()
+        Write-Host "  Icon converted to ICO (256x256)" -ForegroundColor Gray
+    } catch {
+        Write-Host "  WARN: PNG->ICO conversion failed: $_" -ForegroundColor Yellow
+        $iconForJpackage = $null
+    }
+} else {
+    Write-Host "  WARN: Icon file not found: $iconSource" -ForegroundColor Yellow
+    $iconForJpackage = $null
 }
 
 if (Test-Path "dist") {
@@ -112,34 +196,27 @@ if (-not (Test-Path $jarPath)) {
 
 if ($wixFound) {
     Write-Host "  Running jpackage (may take 2-3 minutes)..." -ForegroundColor Gray
-    jpackage `
-        --type msi `
-        --name "JavaFx-TicketHelper" `
-        --app-version "1.0.0" `
-        --dest dist `
-        --input target `
-        --main-jar tickethelper-1.0.0-SNAPSHOT.jar `
-        --main-class com.jactil.javafx.tickethelper.Launcher `
-        --icon $iconTemp `
-        --java-options "-Dfile.encoding=UTF-8" `
-        --win-dir-chooser `
-        --win-menu `
-        --win-shortcut 2>&1 | Out-Null
+    $jpackageArgs = @(
+        "--type", "msi",
+        "--name", "JavaFx-TicketHelper",
+        "--app-version", "1.0.0",
+        "--dest", "dist",
+        "--input", "target",
+        "--main-jar", "tickethelper-1.0.0-SNAPSHOT.jar",
+        "--main-class", "com.jactil.javafx.tickethelper.Launcher",
+        "--java-options", "-Dfile.encoding=UTF-8",
+        "--win-dir-chooser",
+        "--win-menu",
+        "--win-shortcut"
+    )
+    if ($iconForJpackage -and (Test-Path $iconForJpackage)) {
+        $jpackageArgs += @("--icon", $iconForJpackage)
+        Write-Host "  Using icon: $iconForJpackage" -ForegroundColor Gray
+    }
+    & jpackage @jpackageArgs 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Host "`n  jpackage failed, re-running with output..." -ForegroundColor Red
-        jpackage `
-            --type msi `
-            --name "JavaFx-TicketHelper" `
-            --app-version "1.0.0" `
-            --dest dist `
-            --input target `
-            --main-jar tickethelper-1.0.0-SNAPSHOT.jar `
-            --main-class com.jactil.javafx.tickethelper.Launcher `
-            --icon $iconTemp `
-            --java-options "-Dfile.encoding=UTF-8" `
-            --win-dir-chooser `
-            --win-menu `
-            --win-shortcut
+        & jpackage @jpackageArgs
         exit 1
     }
     Write-Host "`n========================================" -ForegroundColor Green

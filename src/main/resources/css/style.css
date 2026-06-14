@@ -319,6 +319,12 @@
     -fx-font-size: 13px;
     -fx-text-fill: #d32f2f;
     -fx-padding: 2 8;
+    -fx-background-color: transparent;
+    -fx-background-radius: 4;
+}
+
+.notice-label:hover {
+    -fx-background-color: #ffebee;
 }
 
 /* 查询区域 */
@@ -535,11 +541,39 @@
     -fx-background-color: #f0f0f0;
     -fx-border-color: #d0d0d0;
     -fx-border-width: 1 0 0 0;
+    -fx-pref-height: 36;
 }
 
 .status-bar .status-label {
-    -fx-font-size: 12px;
-    -fx-text-fill: #555555;
+    -fx-font-size: 14px;
+    -fx-text-fill: #333333;
+    -fx-background-color: transparent;
+    -fx-background-radius: 4;
+    -fx-padding: 2 6;
+    -fx-cursor: default;
+}
+
+.status-bar .status-label:hover {
+    -fx-background-color: #d5d5d5;
+}
+
+/* 状态栏图标按钮（音量、网速） */
+.status-icon-label {
+    -fx-font-size: 18px;
+    -fx-text-fill: #333333;
+    -fx-background-color: transparent;
+    -fx-background-radius: 4;
+    -fx-border-radius: 4;
+}
+
+.status-icon-label:hover {
+    -fx-background-color: #d5d5d5;
+}
+
+/* Tooltip 样式 */
+.status-tooltip {
+    -fx-font-size: 14px;
+    -fx-padding: 8 12;
 }
 
 .btn-logout-small {
@@ -552,4 +586,252 @@
 
 .btn-logout-small:hover {
     -fx-background-color: #bdbdbd;
+}
+
+/* ==================== 赞助项目弹框样式 ==================== */
+
+.donate-root {
+    -fx-background-color: #2d4a3e;
+}
+
+.donate-top-notice {
+    -fx-background-color: #f5a623;
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-padding: 12 24;
+}
+
+.donate-main-title {
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 22px;
+    -fx-font-weight: bold;
+    -fx-padding: 0 0 16 0;
+}
+
+.donate-desc {
+    -fx-text-fill: #e8e8e8;
+    -fx-font-size: 15px;
+    -fx-line-spacing: 6;
+    -fx-wrap-text: true;
+}
+
+.donate-steps-title {
+    -fx-text-fill: #4fc3f7;
+    -fx-font-size: 17px;
+    -fx-font-weight: bold;
+    -fx-padding: 0 0 8 0;
+}
+
+.donate-desc-note {
+    -fx-text-fill: #ff6b6b;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-wrap-text: true;
+}
+
+.donate-qr-section-title {
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+    -fx-padding: 0 0 4 0;
+}
+
+.donate-alipay-icon {
+    -fx-background-color: #1677ff;
+    -fx-background-radius: 5;
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-padding: 3 7;
+}
+
+.donate-qr-label-alipay {
+    -fx-text-fill: #1677ff;
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+}
+
+.donate-qr-label-wechat {
+    -fx-text-fill: #07c160;
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+}
+
+.donate-qr-label {
+    -fx-text-fill: #4fc3f7;
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+    -fx-padding: 4 0;
+}
+
+.donate-qr-image {
+    -fx-background-color: #ffffff;
+    -fx-background-radius: 10;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.35), 12, 0, 0, 3);
+}
+
+.donate-author {
+    -fx-text-fill: #f5a623;
+    -fx-font-size: 14px;
+    -fx-font-style: italic;
+}
+
+/* ==================== 代理设置弹框样式 ==================== */
+
+.proxy-root {
+    -fx-background-color: #f0f0f0;
+}
+
+.proxy-tab-label {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d0d0d0;
+    -fx-border-width: 1 1 0 1;
+    -fx-background-radius: 4 4 0 0;
+    -fx-padding: 6 16;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #333333;
+}
+
+.proxy-optional-label {
+    -fx-text-fill: #999999;
+    -fx-font-size: 12px;
+}
+
+.proxy-table {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d0d0d0;
+    -fx-border-width: 1;
+}
+
+.proxy-table .column-header {
+    -fx-background-color: #f5f5f5;
+    -fx-border-color: #d0d0d0;
+    -fx-border-width: 0 0 1 0;
+}
+
+.proxy-table .column-header .label {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #333333;
+}
+
+.proxy-bottom-tip {
+    -fx-background-color: #fff3cd;
+    -fx-text-fill: #856404;
+    -fx-font-size: 12px;
+    -fx-padding: 8 16;
+    -fx-border-color: #ffc107;
+    -fx-border-width: 1 0 0 0;
+}
+
+/* ==================== 检查更新弹框样式 ==================== */
+
+.update-root {
+    -fx-background-color: #f5f5f5;
+}
+
+.update-version-label {
+    -fx-font-size: 14px;
+    -fx-text-fill: #333333;
+    -fx-font-weight: bold;
+}
+
+.update-log-title {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #555555;
+}
+
+.update-log-area {
+    -fx-font-size: 13px;
+    -fx-font-family: "Microsoft YaHei";
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d0d0d0;
+    -fx-border-width: 1;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-padding: 8;
+}
+
+.update-log-area .content {
+    -fx-background-color: #ffffff;
+}
+
+.update-btn-download {
+    -fx-background-color: #1976d2;
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-background-radius: 4;
+    -fx-cursor: hand;
+}
+
+.update-btn-download:hover {
+    -fx-background-color: #1565c0;
+}
+
+.update-btn-auto {
+    -fx-background-color: #bdbdbd;
+    -fx-text-fill: #757575;
+    -fx-font-size: 13px;
+    -fx-background-radius: 4;
+}
+
+.update-btn-close {
+    -fx-background-color: #e0e0e0;
+    -fx-text-fill: #333333;
+    -fx-font-size: 13px;
+    -fx-background-radius: 4;
+    -fx-cursor: hand;
+}
+
+.update-btn-close:hover {
+    -fx-background-color: #d0d0d0;
+}
+
+.update-tip-new {
+    -fx-background-color: #e3f2fd;
+    -fx-text-fill: #1565c0;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-padding: 8 16;
+}
+
+.update-tip-latest {
+    -fx-background-color: #e8f5e9;
+    -fx-text-fill: #2e7d32;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-padding: 8 16;
+}
+
+/* ==================== 12306 内嵌浏览器工具栏 ==================== */
+
+.web-toolbar {
+    -fx-background-color: #f0f0f0;
+    -fx-border-color: #d0d0d0;
+    -fx-border-width: 0 0 1 0;
+}
+
+.web-toolbar .button {
+    -fx-background-color: #e8e8e8;
+    -fx-text-fill: #333333;
+    -fx-font-size: 13px;
+    -fx-background-radius: 4;
+    -fx-cursor: hand;
+    -fx-padding: 4 12;
+}
+
+.web-toolbar .button:hover {
+    -fx-background-color: #d8d8d8;
+}
+
+.web-toolbar .text-field {
+    -fx-font-size: 13px;
+    -fx-background-radius: 4;
+    -fx-border-radius: 4;
+    -fx-border-color: #cccccc;
+    -fx-padding: 4 8;
 }

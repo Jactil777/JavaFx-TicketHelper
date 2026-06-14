@@ -1,21 +1,27 @@
 package com.jactil.javafx.tickethelper.util;
 
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 /**
  * 时间工具类
  * 提供服务器时间同步、格式化等常用时间操作
- * 当前为占位实现，后续补充 NTP 时间同步逻辑
  */
 public class TimeUtil {
 
     private static final Logger logger = LoggerFactory.getLogger(TimeUtil.class);
 
     private static final DateTimeFormatter DATETIME_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
+
+    private static final DateTimeFormatter DATETIME_FORMATTER_SHORT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private static final DateTimeFormatter DATE_FORMATTER =
@@ -23,6 +29,9 @@ public class TimeUtil {
 
     /** 服务器与本地时间偏移量（毫秒），初始为 0 */
     private static long serverTimeOffset = 0L;
+
+    /** 12306 服务器地址，用于获取服务器时间 */
+    private static final String TIME_SYNC_URL = "https://kyfw.12306.cn/otn/";
 
     /**
      * 获取当前校准后的时间
@@ -48,12 +57,39 @@ public class TimeUtil {
     }
 
     /**
-     * 同步服务器时间（占位方法）
-     * 后续通过 NTP 或 12306 接口获取服务器时间并计算偏移
+     * 同步服务器时间
+     * 通过 HTTP 请求 12306 服务器，从响应头 Date 字段获取服务器时间
+     *
+     * @return long[2]：[0]=服务器时间戳(ms), [1]=本地时间戳(ms)
+     * @throws IOException 网络请求失败
      */
-    public static void syncServerTime() {
-        logger.info("服务器时间同步（占位）：偏移量 = {} ms", serverTimeOffset);
-        // TODO: 实现真实的 NTP 或 12306 服务器时间同步
+    public static long[] syncServerTime() throws IOException {
+        long localTime = System.currentTimeMillis();
+
+        OkHttpClient client = HttpClientUtil.getClient();
+        Request request = new Request.Builder()
+                .url(TIME_SYNC_URL)
+                .head()
+                .build();
+
+        long serverTime;
+        try (Response response = client.newCall(request).execute()) {
+            String dateHeader = response.header("Date");
+            if (dateHeader != null) {
+                // 解析 HTTP Date 头，格式如：Sun, 14 Jun 2026 07:18:50 GMT
+                java.util.Date httpDate = new java.util.Date(dateHeader);
+                serverTime = httpDate.getTime();
+            } else {
+                serverTime = localTime;
+                logger.warn("服务器未返回 Date 头，使用本地时间");
+            }
+        }
+
+        // 计算偏移量
+        serverTimeOffset = serverTime - localTime;
+        logger.info("服务器时间偏移量：{} ms", serverTimeOffset);
+
+        return new long[]{serverTime, localTime};
     }
 
     /**

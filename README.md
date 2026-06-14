@@ -162,9 +162,43 @@ cd E:\JavaFx-TicketHelper
 
 - JDK 17+，需包含 `jpackage`
 - Maven 3.6+
-- WiX Toolset 3.x（生成 .msi 安装包所需。未安装则仅输出 JAR）
+- WiX Toolset 3.x（生成 .msi/.exe 安装包所需。未安装则仅输出 JAR）
+
+**安装 WiX Toolset（生成 .exe 必需）：**
+
+1. 前往 [WiX Toolset v3 Releases](https://github.com/wixtoolset/wix3/releases) 下载最新 v3 版本（如 `wix314-binaries.zip` 或 `.msi` 安装包）
+2. 安装后确保 `candle.exe` 和 `light.exe` 在系统 PATH 中（默认安装路径：`C:\Program Files (x86)\WiX Toolset v3.14\bin`）
+3. 安装完成后**重启终端**，重新运行 `一键打包.bat` 即可生成 `.msi` 安装包
+
+> 如果未安装 WiX Toolset，脚本仍会成功构建，但只会输出 JAR 文件（`dist\tickethelper-1.0.0-SNAPSHOT.jar`），可通过 `java -jar` 直接运行。
 
 安装包默认输出到 `dist/`。由于安装包包含 JRE，文件体积较大是正常现象。
+
+### 发布到 GitHub Releases
+
+由于 GitHub 网页上传限制 25MB，安装包（约 69MB）需通过 `gh` CLI 上传：
+
+**1. 安装 gh CLI**
+
+前往 https://github.com/cli/cli/releases/latest 下载 `gh_*_windows_amd64.msi` 并安装，安装后重启终端。
+
+**2. 生成 GitHub Token**
+
+1. 打开 https://github.com/settings/tokens/new
+2. 勾选 **`repo`** 权限（会自动包含所有子权限）
+3. 点击 **Generate token**，复制生成的 Token（以 `ghp_` 开头）
+
+**3. 登录并上传**
+
+```powershell
+# 使用 Token 登录 gh（替换为你的 Token）
+echo "ghp_XXXXXXXXXXXXXXXX" | gh auth login --with-token
+
+# 创建 Release 并上传安装包
+gh release create v1.0.0 dist/JavaFx-TicketHelper-1.0.0.msi --title "JavaFx-TicketHelper v1.0.0" --notes "首发版本"
+```
+
+> 每次发布新版本时，修改版本号和描述即可，如 `v1.0.1`、`v1.1.0` 等。
 
 ---
 

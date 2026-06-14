@@ -140,4 +140,26 @@ public class HttpClientUtil {
     public static OkHttpClient getClient() {
         return client;
     }
+
+    /**
+     * 获取当前所有 Cookie（用于浏览器同步登录）
+     */
+    public static java.util.List<Cookie> getAllCookies() {
+        // 通过反射访问内部 cookieJar
+        try {
+            java.lang.reflect.Field field = client.getClass().getDeclaredField("cookieJar");
+            field.setAccessible(true);
+            Object jar = field.get(client);
+            if (jar instanceof CookieJar) {
+                java.lang.reflect.Field storeField = jar.getClass().getDeclaredField("cookieStore");
+                storeField.setAccessible(true);
+                @SuppressWarnings("unchecked")
+                java.util.List<Cookie> cookies = (java.util.List<Cookie>) storeField.get(jar);
+                return new java.util.ArrayList<>(cookies);
+            }
+        } catch (Exception e) {
+            logger.warn("获取 Cookies 失败", e);
+        }
+        return new java.util.ArrayList<>();
+    }
 }
