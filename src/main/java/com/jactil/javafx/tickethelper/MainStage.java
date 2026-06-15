@@ -1,7 +1,10 @@
 package com.jactil.javafx.tickethelper;
 
+import com.jactil.javafx.tickethelper.component.StationAutoCompleteField;
 import com.jactil.javafx.tickethelper.config.AppConfig;
 import com.jactil.javafx.tickethelper.model.UserInfo;
+import com.jactil.javafx.tickethelper.service.TicketService;
+import com.jactil.javafx.tickethelper.service.impl.TicketServiceImpl;
 import com.jactil.javafx.tickethelper.util.TimeUtil;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
@@ -20,6 +23,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 主界面窗口（参考 Bypass 分流抢票设计）
@@ -33,11 +38,18 @@ public class MainStage extends Stage {
     private Runnable onLogout;
 
     // 查询区域控件
-    private TextField fromStationField;
-    private TextField toStationField;
+    private StationAutoCompleteField fromStationField;
+    private StationAutoCompleteField toStationField;
     private DatePicker datePicker;
     private ComboBox<String> departTimeCombo;
     private TextArea logArea;
+
+    // 车票查询
+    private TicketService ticketService;
+    private TableView<TableRowData> ticketTableView;
+    private static final String[] TICKET_COLUMNS = {"车次", "出发地", "目的地", "历时", "商务/特等", "优选一等座",
+            "一等座", "二等座", "高级软卧", "软卧", "硬卧", "软座", "硬座", "无座", "其他", "日期", "备注"};
+    private static final double[] TICKET_COLUMN_WIDTHS = {80, 90, 90, 70, 85, 85, 85, 85, 80, 70, 70, 65, 65, 65, 65, 90, 100};
 
     // 状态栏音量按钮
     private Label volumeLabel;
@@ -57,6 +69,7 @@ public class MainStage extends Stage {
     public MainStage(UserInfo userInfo, Runnable onLogout) {
         this.currentUser = userInfo;
         this.onLogout = onLogout;
+        this.ticketService = new TicketServiceImpl();
         setTitle("JavaFx-TicketHelper - 抢票助手");
         setMinWidth(1200);
         setMinHeight(700);
@@ -295,26 +308,20 @@ public class MainStage extends Stage {
 
         Label fromLabel = new Label("出发:");
         fromLabel.getStyleClass().add("query-label");
-        fromStationField = new TextField();
-        fromStationField.setPromptText("出发站");
-        fromStationField.setPrefWidth(110);
-        fromStationField.getStyleClass().add("query-input");
+        fromStationField = new StationAutoCompleteField("出发站", 110);
 
         Button swapBtn = new Button("\u21C4");
         swapBtn.setPrefWidth(32);
         swapBtn.getStyleClass().add("btn-swap");
         swapBtn.setOnAction(e -> {
             String tmp = fromStationField.getText();
-            fromStationField.setText(toStationField.getText());
-            toStationField.setText(tmp);
+            fromStationField.setTextSilent(toStationField.getText());
+            toStationField.setTextSilent(tmp);
         });
 
         Label toLabel = new Label("目的:");
         toLabel.getStyleClass().add("query-label");
-        toStationField = new TextField();
-        toStationField.setPromptText("目的站");
-        toStationField.setPrefWidth(110);
-        toStationField.getStyleClass().add("query-input");
+        toStationField = new StationAutoCompleteField("目的站", 110);
 
         Label dateLabel = new Label("日期:");
         dateLabel.getStyleClass().add("query-label");
@@ -323,12 +330,25 @@ public class MainStage extends Stage {
         datePicker = new DatePicker(LocalDate.now());
         datePicker.setPrefWidth(150);
         datePicker.getStyleClass().add("query-datepicker");
+        datePrevBtn.setOnAction(e -> {
+            LocalDate current = datePicker.getValue();
+            if (current != null) {
+                datePicker.setValue(current.minusDays(1));
+            }
+        });
         Button dateNextBtn = new Button(">");
         dateNextBtn.getStyleClass().add("btn-date-nav");
+        dateNextBtn.setOnAction(e -> {
+            LocalDate current = datePicker.getValue();
+            if (current != null) {
+                datePicker.setValue(current.plusDays(1));
+            }
+        });
 
         Label timeLabel = new Label("发车时间:");
         timeLabel.getStyleClass().add("query-label");
         departTimeCombo = new ComboBox<>();
+        departTimeCombo.setEditable(true);
         departTimeCombo.getItems().addAll("00:00-24:00", "00:00-06:00", "06:00-12:00", "12:00-18:00", "18:00-24:00");
         departTimeCombo.setValue("00:00-24:00");
         departTimeCombo.setPrefWidth(120);
@@ -353,10 +373,10 @@ public class MainStage extends Stage {
         addTaskBtn.getStyleClass().add("btn-small");
         modeRow.getChildren().addAll(modeLabel, singleTask, multiTask, multiStation, addTaskBtn);
 
-        // -- 第3行：筛选 --
+        // -- 第3行：车次类型 --
         HBox filterRow = new HBox(6);
         filterRow.setAlignment(Pos.CENTER_LEFT);
-        Label filterLabel = new Label("筛选:");
+        Label filterLabel = new Label("车次类型:");
         filterLabel.getStyleClass().add("query-label");
         CheckBox filterAll = new CheckBox("全部");
         filterAll.setSelected(true);
@@ -372,12 +392,21 @@ public class MainStage extends Stage {
         filterK.setSelected(true);
         CheckBox filterOther = new CheckBox("其他");
         filterOther.setSelected(true);
+        filterAll.setOnAction(e -> {
+            boolean selected = filterAll.isSelected();
+            filterG.setSelected(selected);
+            filterD.setSelected(selected);
+            filterZ.setSelected(selected);
+            filterT.setSelected(selected);
+            filterK.setSelected(selected);
+            filterOther.setSelected(selected);
+        });
         filterRow.getChildren().addAll(filterLabel, filterAll, filterG, filterD, filterZ, filterT, filterK, filterOther);
 
-        // -- 第4行：隐藏 --
+        // -- 第4行：车次席别 --
         HBox hideRow = new HBox(6);
         hideRow.setAlignment(Pos.CENTER_LEFT);
-        Label hideLabel = new Label("隐藏:");
+        Label hideLabel = new Label("车次席别:");
         hideLabel.getStyleClass().add("query-label");
         CheckBox hideAll = new CheckBox("全选");
         hideAll.setSelected(true);
@@ -403,6 +432,20 @@ public class MainStage extends Stage {
         hideNoSeat.setSelected(true);
         CheckBox hideOtherSeat = new CheckBox("其他");
         hideOtherSeat.setSelected(true);
+        hideAll.setOnAction(e -> {
+            boolean selected = hideAll.isSelected();
+            hideBusiness.setSelected(selected);
+            hideFirstPlus.setSelected(selected);
+            hideFirst.setSelected(selected);
+            hideSecond.setSelected(selected);
+            hideHighSoft.setSelected(selected);
+            hideSoftSleeper.setSelected(selected);
+            hideHardSleeper.setSelected(selected);
+            hideSoftSeat.setSelected(selected);
+            hideHardSeat.setSelected(selected);
+            hideNoSeat.setSelected(selected);
+            hideOtherSeat.setSelected(selected);
+        });
         hideRow.getChildren().addAll(hideLabel, hideAll, hideBusiness, hideFirstPlus, hideFirst, hideSecond,
                 hideHighSoft, hideSoftSleeper, hideHardSleeper, hideSoftSeat, hideHardSeat, hideNoSeat, hideOtherSeat);
 
@@ -418,12 +461,22 @@ public class MainStage extends Stage {
         Label showAllPriceLink = new Label("显示全部票价");
         showAllPriceLink.getStyleClass().add("link-blue");
 
-        Button queryBtn = new Button("查询\n车票");
+        Button queryBtn = new Button("查询车票");
         queryBtn.getStyleClass().add("btn-query");
-        queryBtn.setPrefWidth(65);
-        queryBtn.setPrefHeight(48);
+        queryBtn.setPrefWidth(80);
+        queryBtn.setPrefHeight(52);
+        queryBtn.setOnAction(e -> doQueryTickets());
 
-        VBox opCheckboxes = new VBox(3);
+        Button clearBtn = new Button("清空查询");
+        clearBtn.getStyleClass().add("btn-query");
+        clearBtn.setPrefWidth(80);
+        clearBtn.setPrefHeight(36);
+        clearBtn.setOnAction(e -> doClearTickets());
+
+        VBox btnBox = new VBox(8);
+        btnBox.getChildren().addAll(queryBtn, clearBtn);
+
+        VBox opCheckboxes = new VBox(12);
         HBox opRow1 = new HBox(8);
         opRow1.setAlignment(Pos.CENTER_LEFT);
         opRow1.getChildren().addAll(adultCheck, studentCheck, transferLink);
@@ -433,17 +486,18 @@ public class MainStage extends Stage {
         opCheckboxes.getChildren().addAll(opRow1, opRow2);
 
         VBox opBox = new VBox(3);
-        opBox.setPadding(new Insets(2, 8, 6, 8));
+        opBox.setPadding(new Insets(12, 16, 14, 16));
         opBox.getStyleClass().add("op-group-box");
-        opBox.setPrefWidth(290);
+        opBox.setPrefWidth(340);
+        opBox.setMaxWidth(340);
 
         Label opTitle = new Label("操作");
         opTitle.getStyleClass().add("op-group-title");
 
-        HBox opContent = new HBox(10);
+        HBox opContent = new HBox(16);
         opContent.setAlignment(Pos.CENTER_LEFT);
         VBox.setVgrow(opCheckboxes, Priority.ALWAYS);
-        opContent.getChildren().addAll(opCheckboxes, queryBtn);
+        opContent.getChildren().addAll(opCheckboxes, btnBox);
 
         opBox.getChildren().addAll(opTitle, opContent);
 
@@ -469,25 +523,115 @@ public class MainStage extends Stage {
 
         TableView<TableRowData> tableView = new TableView<>();
         tableView.getStyleClass().add("result-table");
+        tableView.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        // 隐藏原生表头，列名作为第一行数据渲染，保证表头和数据使用同一套单元格布局
+        // 通过 CSS 隐藏表头（.column-header-background 高度设为 0）
+        ticketTableView = tableView;
 
-        String[] columns = {"车次", "出发地", "目的地", "历时", "商务/特等", "优选一等座",
-                "一等座", "二等座", "高级软卧", "软卧", "硬卧", "软座", "硬座", "无座", "其他", "日期", "备注"};
-        double[] widths = {70, 80, 80, 70, 80, 80, 70, 70, 70, 60, 60, 60, 60, 60, 60, 90, 100};
-
-        for (int i = 0; i < columns.length; i++) {
-            final String colName = columns[i];
+        for (int i = 0; i < TICKET_COLUMNS.length; i++) {
+            final String colName = TICKET_COLUMNS[i];
             TableColumn<TableRowData, String> col = new TableColumn<>(colName);
             col.setCellValueFactory(data -> data.getValue().getProperty(colName));
-            col.setPrefWidth(widths[i]);
-            col.setResizable(true);
+            col.setPrefWidth(TICKET_COLUMN_WIDTHS[i]);
+            // 备注列使用按钮样式
+            if ("备注".equals(colName)) {
+                col.setCellFactory(column -> new TableCell<TableRowData, String>() {
+                    @Override
+                    protected void updateItem(String item, boolean empty) {
+                        super.updateItem(item, empty);
+                        if (empty || item == null) {
+                            setText(null);
+                            getStyleClass().remove("btn-book");
+                        } else {
+                            setText(item);
+                            if (!getStyleClass().contains("btn-book")) {
+                                getStyleClass().add("btn-book");
+                            }
+                        }
+                    }
+                });
+            }
             tableView.getColumns().add(col);
         }
+
+        // 添加表头行作为第一行数据
+        TableRowData headerRow = new TableRowData();
+        for (String colName : TICKET_COLUMNS) {
+            headerRow.setProperty(colName, colName);
+        }
+        headerRow.setHeaderRow(true);
+        tableView.getItems().add(headerRow);
 
         tableView.setPlaceholder(new Label("暂无查询结果，请输入出发站和目的站后点击\"查询车票\""));
         VBox.setVgrow(tableView, Priority.ALWAYS);
         tableBox.getChildren().add(tableView);
 
         return tableBox;
+    }
+
+    // ==================== 车票查询 ====================
+
+    private void doQueryTickets() {
+        String fromStation = fromStationField.getText();
+        String toStation = toStationField.getText();
+        LocalDate date = datePicker.getValue();
+
+        if (fromStation == null || fromStation.trim().isEmpty()) {
+            logger.warn("请输入出发站");
+            return;
+        }
+        if (toStation == null || toStation.trim().isEmpty()) {
+            logger.warn("请输入目的站");
+            return;
+        }
+        if (date == null) {
+            logger.warn("请选择出发日期");
+            return;
+        }
+
+        String trainDate = date.format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE);
+        logger.info("开始查询车票：{} -> {}, 日期={}", fromStation, toStation, trainDate);
+
+        // 清空表格（保留表头行）
+        if (ticketTableView != null) {
+            ticketTableView.getItems().removeIf(row -> !row.isHeaderRow());
+        }
+
+        // 注册回调
+        ((TicketServiceImpl) ticketService).addCallback(new TicketServiceImpl.QueryCallback() {
+            @Override
+            public void onResult(List<Map<String, String>> results) {
+                javafx.application.Platform.runLater(() -> {
+                    if (ticketTableView == null) return;
+                    // 保留表头行，只清除数据行
+                    ticketTableView.getItems().removeIf(row -> !row.isHeaderRow());
+                    for (Map<String, String> train : results) {
+                        TableRowData row = new TableRowData();
+                        train.forEach(row::setProperty);
+                        ticketTableView.getItems().add(row);
+                    }
+                    logger.info("表格已更新，共 {} 条记录", results.size());
+                });
+            }
+
+            @Override
+            public void onError(String message) {
+                javafx.application.Platform.runLater(() ->
+                        logger.error("查询失败：{}", message)
+                );
+            }
+        });
+
+        // 异步查询
+        new Thread(() -> ticketService.queryTickets(fromStation, toStation, trainDate), "ticket-query").start();
+    }
+
+    // 清空查询数据（保留表头行）
+    private void doClearTickets() {
+        if (ticketTableView != null) {
+            ticketTableView.getItems().removeIf(row -> !row.isHeaderRow());
+            logger.info("已清空查询数据");
+        }
     }
 
     // ==================== 设置区域 ====================
@@ -803,7 +947,7 @@ public class MainStage extends Stage {
         TitledPane faqGroup = new TitledPane("相关问题", faqContent);
         faqGroup.setCollapsible(false);
         faqGroup.getStyleClass().add("order-group");
-        faqGroup.setPrefHeight(62);
+        faqGroup.setMinHeight(68);
 
         topBar.getChildren().addAll(queryGroup, unfinishedGroup, finishedGroup, faqGroup);
 
@@ -1721,6 +1865,7 @@ public class MainStage extends Stage {
     public static class TableRowData {
         private final javafx.beans.property.SimpleMapProperty<String, String> properties =
                 new javafx.beans.property.SimpleMapProperty<>(javafx.collections.FXCollections.observableHashMap());
+        private boolean headerRow = false;
 
         public void setProperty(String key, String value) {
             properties.put(key, value);
@@ -1728,6 +1873,14 @@ public class MainStage extends Stage {
 
         public javafx.beans.property.MapProperty<String, String> getProperties() {
             return properties;
+        }
+
+        public boolean isHeaderRow() {
+            return headerRow;
+        }
+
+        public void setHeaderRow(boolean headerRow) {
+            this.headerRow = headerRow;
         }
 
         public javafx.beans.binding.StringBinding getProperty(String key) {

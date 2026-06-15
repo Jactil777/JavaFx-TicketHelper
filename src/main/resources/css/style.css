@@ -353,6 +353,31 @@
     -fx-border-color: #1976D2;
 }
 
+/* 车站自动补全下拉列表 */
+.station-autocomplete-list {
+    -fx-border-color: #1976D2;
+    -fx-border-width: 1;
+    -fx-border-radius: 3;
+    -fx-background-radius: 3;
+    -fx-background-color: #ffffff;
+    -fx-padding: 2;
+}
+
+.station-autocomplete-list .list-cell {
+    -fx-padding: 4 8;
+    -fx-font-size: 13px;
+    -fx-text-fill: #333333;
+}
+
+.station-autocomplete-list .list-cell:hover {
+    -fx-background-color: #e3f2fd;
+}
+
+.station-autocomplete-list .list-cell:filled:selected {
+    -fx-background-color: #1976D2;
+    -fx-text-fill: white;
+}
+
 .query-datepicker {
     -fx-padding: 4 8;
     -fx-font-size: 13px;
@@ -362,8 +387,9 @@
 /* 交换按钮 */
 .btn-swap {
     -fx-background-color: #e0e0e0;
-    -fx-text-fill: #333333;
-    -fx-font-size: 14px;
+    -fx-text-fill: #1976D2;
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
     -fx-background-radius: 3;
     -fx-padding: 4 8;
     -fx-pref-height: 28;
@@ -376,8 +402,9 @@
 /* 日期导航按钮 */
 .btn-date-nav {
     -fx-background-color: #e0e0e0;
-    -fx-text-fill: #333333;
-    -fx-font-size: 13px;
+    -fx-text-fill: #1976D2;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
     -fx-background-radius: 3;
     -fx-padding: 4 10;
     -fx-pref-height: 28;
@@ -448,31 +475,87 @@
 
 .result-table {
     -fx-font-size: 13px;
-    -fx-border-color: #d0d0d0;
+    -fx-border-color: #c0c0c0;
+    -fx-border-width: 1;
+}
+
+/* 完全隐藏原生表头区域 */
+.result-table .column-header-area {
+    -fx-pref-height: 0;
+    -fx-max-height: 0;
+    -fx-min-height: 0;
+    -fx-opacity: 0;
+}
+
+.result-table .column-header-background {
+    -fx-pref-height: 0;
+    -fx-max-height: 0;
+    -fx-min-height: 0;
 }
 
 .result-table .column-header {
-    -fx-background-color: #f5f5f5;
-    -fx-border-color: #d0d0d0;
-    -fx-border-width: 0 1 1 0;
-    -fx-padding: 6 4;
+    -fx-pref-height: 0;
+    -fx-max-height: 0;
+    -fx-min-height: 0;
 }
 
-.result-table .column-header .label {
-    -fx-font-size: 13px;
+/* 统一单元格样式：表头行和数据行使用相同的 padding 和 insets，保证完全对齐 */
+.result-table .table-cell {
+    -fx-alignment: CENTER;
+    -fx-padding: 4 4;
+    /* 两层背景：底层灰色作为竖线和横线，上层白色缩进 1px 露出边框 */
+    -fx-background-insets: 0, 0 1 1 0;
+    -fx-background-color: #d8d8d8, #ffffff;
+}
+
+/* 表头行（第一行）使用不同背景色 */
+.result-table .table-row-cell:first .table-cell {
+    -fx-background-color: #d0d0d0, #f0f0f0;
+}
+
+.result-table .table-row-cell:first .table-cell .label {
     -fx-font-weight: bold;
     -fx-text-fill: #333333;
 }
 
 .result-table .table-row-cell {
-    -fx-border-color: transparent transparent #e0e0e0 transparent;
+    -fx-border-color: transparent;
+    -fx-background-color: transparent;
 }
 
-.result-table .table-row-cell:selected {
-    -fx-background-color: #e3f2fd;
+.result-table .table-row-cell:odd .table-cell {
+    -fx-background-color: #d8d8d8, #fafafa;
 }
 
-/* 设置区域 */
+.result-table .table-row-cell:selected .table-cell {
+    -fx-background-color: #a0c8e8, #cce4f7;
+}
+
+/* 备注列按钮样式 */
+.result-table .table-cell.btn-book {
+    -fx-background-color: #1976D2;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-alignment: CENTER;
+    -fx-padding: 4 8;
+    -fx-background-radius: 3;
+    -fx-background-insets: 2;
+    -fx-cursor: hand;
+}
+
+.result-table .table-cell.btn-book:hover {
+    -fx-background-color: #1565C0;
+}
+
+.result-table .table-row-cell:odd .table-cell.btn-book {
+    -fx-background-color: #1976D2;
+}
+
+.result-table .table-row-cell:selected .table-cell.btn-book {
+    -fx-background-color: #0D47A1;
+}
+
+/* ==================== 设置区域 ==================== */
 .settings-area {
     -fx-background-color: #ffffff;
     -fx-border-color: #d0d0d0;
@@ -884,7 +967,7 @@
 
 .order-group > .content {
     -fx-background-color: #ffffff;
-    -fx-padding: 0;
+    -fx-padding: 2 4 4 4;
     -fx-border-color: transparent;
 }
 
