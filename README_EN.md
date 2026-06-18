@@ -72,6 +72,10 @@
 | Feature | Status | Implementation |
 |:---|:---:|:---|
 | Ticket booking page (train / date / seat filter) | ✅ | OkHttp queries API → Jackson parses JSON → `TableView` displays → `ComboBox/CheckBox` filters |
+| Adult / Student ticket type toggle | ✅ | Pass `purpose_codes` param (ADULT=adult, 0X00=student); adult/student checkboxes are mutually exclusive |
+| Client-side 3-condition filter (train type / seat / departure time) | ✅ | 12306 returns full data; frontend filters by train prefix letter, seat availability, departure time range in real-time |
+| Query transfer trains | ✅ | Click to launch browser via Selenium with Cookie injection (maintains login), navigate to 12306 transfer page with from/to station and date params |
+| Show all prices / restore ticket count toggle | ✅ | Hover shows price tooltip; click parses prices directly from query response (no extra API call), seat columns instantly switch to price display (¥xxx); click again to restore ticket counts |
 | Waitlist order page | ✅ | Query waitlist API, display in `TableView`; support pay / cancel / refund actions |
 | Order management (pending / completed) | ✅ | Query order API, tabbed display; support pay / cancel / refund / reschedule actions |
 | Auto-submit order (preset passenger / seat) | ✅ | Store passenger info locally, auto-submit with passenger / seat info when ticket found |

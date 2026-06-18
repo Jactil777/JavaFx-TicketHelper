@@ -1,10 +1,13 @@
 package com.jactil.javafx.tickethelper;
 
 import com.jactil.javafx.tickethelper.component.StationAutoCompleteField;
+import com.jactil.javafx.tickethelper.config.AccountConfig;
 import com.jactil.javafx.tickethelper.config.AppConfig;
 import com.jactil.javafx.tickethelper.model.UserInfo;
 import com.jactil.javafx.tickethelper.service.TicketService;
 import com.jactil.javafx.tickethelper.service.impl.TicketServiceImpl;
+import com.jactil.javafx.tickethelper.util.HttpClientUtil;
+import com.jactil.javafx.tickethelper.util.StationUtil;
 import com.jactil.javafx.tickethelper.util.TimeUtil;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
@@ -16,15 +19,27 @@ import javafx.scene.image.ImageView;
 import javafx.scene.layout.*;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
+import javafx.scene.text.Text;
 import javafx.stage.Modality;
+import javafx.stage.Popup;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.awt.Desktop;
+import java.io.File;
+import java.io.RandomAccessFile;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import ch.qos.logback.classic.LoggerContext;
+import ch.qos.logback.classic.encoder.PatternLayoutEncoder;
+import ch.qos.logback.core.rolling.RollingFileAppender;
+import ch.qos.logback.core.rolling.TimeBasedRollingPolicy;
 
 /**
  * 主界面窗口（参考 Bypass 分流抢票设计）
@@ -37,12 +52,61 @@ public class MainStage extends Stage {
     private UserInfo currentUser;
     private Runnable onLogout;
 
+    /** 当前账户配置（分账户隔离） */
+    private AccountConfig currentAccountConfig;
+
     // 查询区域控件
     private StationAutoCompleteField fromStationField;
     private StationAutoCompleteField toStationField;
     private DatePicker datePicker;
     private ComboBox<String> departTimeCombo;
-    private TextArea logArea;
+    private VBox logArea;  // 日志输出区（VBox 容纳彩色 Text 节点）
+    private ScrollPane logScrollPane;
+
+    // 日志实时读取
+    private File currentLogFile;
+    private long logPointer = 0;
+    private Timeline logTailTimeline;
+    private static final int MAX_LOG_LINES = 500;
+
+    // 成人/学生票
+    private CheckBox adultCheck;
+    private CheckBox studentCheck;
+
+    // 车次类型筛选
+    private CheckBox filterAll, filterG, filterD, filterZ, filterT, filterK, filterOther;
+
+    // 车次席别筛选
+    private CheckBox hideAll, hideBusiness, hideFirstPlus, hideFirst, hideSecond,
+            hideHighSoft, hideSoftSleeper, hideHardSleeper, hideSoftSeat, hideHardSeat, hideNoSeat, hideOtherSeat;
+
+    // 只看有票车次
+    private CheckBox onlyAvailableCheck;
+
+    // 同城车站筛选按钮和弹出窗口
+    private Button fromCityBtn;
+    private Button toCityBtn;
+    private Popup fromCityPopup;
+    private Popup toCityPopup;
+    /** 出发站同城筛选状态：城市名 -> 选中的车站名集合 */
+    private Map<String, java.util.Set<String>> fromCityFilters = new HashMap<>();
+    /** 到达站同城筛选状态 */
+    private Map<String, java.util.Set<String>> toCityFilters = new HashMap<>();
+
+    // 原始查询结果（用于前端筛选）
+    private List<Map<String, String>> allTrainResults = new ArrayList<>();
+
+    // 查询结果摘要提示
+    private Label querySummaryLabel;
+
+    // 中转换乘/票价链接
+    private Label transferLink;
+    private Label showAllPriceLink;
+
+    // 票价显示状态
+    private boolean showingPrice = false;
+    // 保存原始席别数据（切换票价时备份）
+    private Map<String, Map<String, String>> originalSeatDataMap = new HashMap<>();
 
     // 车票查询
     private TicketService ticketService;
@@ -70,6 +134,16 @@ public class MainStage extends Stage {
         this.currentUser = userInfo;
         this.onLogout = onLogout;
         this.ticketService = new TicketServiceImpl();
+
+        // 加载分账户配置
+        initAccountConfig();
+
+        // 按账号初始化独立日志文件
+        initAccountLogFile();
+
+        // 启动日志实时读取
+        startLogTailing();
+
         setTitle("JavaFx-TicketHelper - 抢票助手");
         setMinWidth(1200);
         setMinHeight(700);
@@ -111,6 +185,13 @@ public class MainStage extends Stage {
             close();
         });
         menuBar.getChildren().add(logoutLabel);
+
+        // 窗口关闭时停止日志轮询
+        setOnCloseRequest(e -> {
+            if (logTailTimeline != null) {
+                logTailTimeline.stop();
+            }
+        });
 
         String[][] menuItems = {
                 {"\uD83C\uDF10 免登录打开12306官网", "open12306"},
@@ -273,13 +354,22 @@ public class MainStage extends Stage {
         VBox queryArea = createQueryArea();
         page.getChildren().add(queryArea);
 
-        // 结果表格
+        // 查询结果摘要提示
+        querySummaryLabel = new Label();
+        querySummaryLabel.getStyleClass().add("query-summary");
+        querySummaryLabel.setPadding(new Insets(4, 10, 2, 10));
+        page.getChildren().add(querySummaryLabel);
+
+        // 结果表格（vgrow=ALWAYS，占满剩余空间）
         VBox tableArea = createTableArea();
         VBox.setVgrow(tableArea, Priority.ALWAYS);
         page.getChildren().add(tableArea);
 
-        // 设置区域（可折叠）
+        // 设置区域（固定高度，不随窗口缩放）
         settingsArea = createSettingsArea();
+        settingsArea.setPrefHeight(350);
+        settingsArea.setMinHeight(350);
+        settingsArea.setMaxHeight(350);
         settingsArea.setVisible(false);
         settingsArea.setManaged(false);
         page.getChildren().add(settingsArea);
@@ -310,6 +400,10 @@ public class MainStage extends Stage {
         fromLabel.getStyleClass().add("query-label");
         fromStationField = new StationAutoCompleteField("出发站", 110);
 
+        // 出发站同城车站筛选按钮
+        fromCityBtn = createCityFilterButton("筛选出发的同城车站，避免买错，会记忆保存，取消筛选需重新勾选。");
+        fromCityBtn.setOnAction(e -> showCityStationPopup(fromStationField, fromCityBtn, fromCityPopup, fromCityFilters, true));
+
         Button swapBtn = new Button("\u21C4");
         swapBtn.setPrefWidth(32);
         swapBtn.getStyleClass().add("btn-swap");
@@ -317,11 +411,24 @@ public class MainStage extends Stage {
             String tmp = fromStationField.getText();
             fromStationField.setTextSilent(toStationField.getText());
             toStationField.setTextSilent(tmp);
+            // 交换后重新显示同城筛选状态
+            updateCityFilterButtonState(fromCityBtn, fromStationField.getText(), fromCityFilters);
+            updateCityFilterButtonState(toCityBtn, toStationField.getText(), toCityFilters);
         });
 
         Label toLabel = new Label("目的:");
         toLabel.getStyleClass().add("query-label");
         toStationField = new StationAutoCompleteField("目的站", 110);
+
+        // 到达站同城车站筛选按钮
+        toCityBtn = createCityFilterButton("筛选到达的同城车站，避免买错，会记忆保存，取消筛选需重新勾选。");
+        toCityBtn.setOnAction(e -> showCityStationPopup(toStationField, toCityBtn, toCityPopup, toCityFilters, false));
+
+        // 初始化车站搜索历史（分账户）
+        initStationHistory();
+
+        // 加载同城车站筛选状态
+        loadCityFilters();
 
         Label dateLabel = new Label("日期:");
         dateLabel.getStyleClass().add("query-label");
@@ -352,8 +459,9 @@ public class MainStage extends Stage {
         departTimeCombo.getItems().addAll("00:00-24:00", "00:00-06:00", "06:00-12:00", "12:00-18:00", "18:00-24:00");
         departTimeCombo.setValue("00:00-24:00");
         departTimeCombo.setPrefWidth(120);
+        departTimeCombo.setOnAction(e -> applyFilters());
 
-        formFields.getChildren().addAll(fromLabel, fromStationField, swapBtn, toLabel, toStationField,
+        formFields.getChildren().addAll(fromLabel, fromStationField, fromCityBtn, swapBtn, toLabel, toStationField, toCityBtn,
                 dateLabel, datePrevBtn, datePicker, dateNextBtn, timeLabel, departTimeCombo);
 
         // -- 第2行：模式 --
@@ -378,19 +486,19 @@ public class MainStage extends Stage {
         filterRow.setAlignment(Pos.CENTER_LEFT);
         Label filterLabel = new Label("车次类型:");
         filterLabel.getStyleClass().add("query-label");
-        CheckBox filterAll = new CheckBox("全部");
+        filterAll = new CheckBox("全部");
         filterAll.setSelected(true);
-        CheckBox filterG = new CheckBox("高铁/城际");
+        filterG = new CheckBox("高铁/城际");
         filterG.setSelected(true);
-        CheckBox filterD = new CheckBox("动车");
+        filterD = new CheckBox("动车");
         filterD.setSelected(true);
-        CheckBox filterZ = new CheckBox("Z直达");
+        filterZ = new CheckBox("Z直达");
         filterZ.setSelected(true);
-        CheckBox filterT = new CheckBox("T特快");
+        filterT = new CheckBox("T特快");
         filterT.setSelected(true);
-        CheckBox filterK = new CheckBox("K快速");
+        filterK = new CheckBox("K快速");
         filterK.setSelected(true);
-        CheckBox filterOther = new CheckBox("其他");
+        filterOther = new CheckBox("其他");
         filterOther.setSelected(true);
         filterAll.setOnAction(e -> {
             boolean selected = filterAll.isSelected();
@@ -400,7 +508,15 @@ public class MainStage extends Stage {
             filterT.setSelected(selected);
             filterK.setSelected(selected);
             filterOther.setSelected(selected);
+            applyFilters();
         });
+        // 车次类型筛选变化时触发过滤
+        filterG.setOnAction(e -> { syncSelectAll(filterAll, filterG, filterD, filterZ, filterT, filterK, filterOther); applyFilters(); });
+        filterD.setOnAction(e -> { syncSelectAll(filterAll, filterG, filterD, filterZ, filterT, filterK, filterOther); applyFilters(); });
+        filterZ.setOnAction(e -> { syncSelectAll(filterAll, filterG, filterD, filterZ, filterT, filterK, filterOther); applyFilters(); });
+        filterT.setOnAction(e -> { syncSelectAll(filterAll, filterG, filterD, filterZ, filterT, filterK, filterOther); applyFilters(); });
+        filterK.setOnAction(e -> { syncSelectAll(filterAll, filterG, filterD, filterZ, filterT, filterK, filterOther); applyFilters(); });
+        filterOther.setOnAction(e -> { syncSelectAll(filterAll, filterG, filterD, filterZ, filterT, filterK, filterOther); applyFilters(); });
         filterRow.getChildren().addAll(filterLabel, filterAll, filterG, filterD, filterZ, filterT, filterK, filterOther);
 
         // -- 第4行：车次席别 --
@@ -408,29 +524,29 @@ public class MainStage extends Stage {
         hideRow.setAlignment(Pos.CENTER_LEFT);
         Label hideLabel = new Label("车次席别:");
         hideLabel.getStyleClass().add("query-label");
-        CheckBox hideAll = new CheckBox("全选");
+        hideAll = new CheckBox("全选");
         hideAll.setSelected(true);
-        CheckBox hideBusiness = new CheckBox("商务/特等");
+        hideBusiness = new CheckBox("商务/特等");
         hideBusiness.setSelected(true);
-        CheckBox hideFirstPlus = new CheckBox("优选一等座");
+        hideFirstPlus = new CheckBox("优选一等座");
         hideFirstPlus.setSelected(true);
-        CheckBox hideFirst = new CheckBox("一等座");
+        hideFirst = new CheckBox("一等座");
         hideFirst.setSelected(true);
-        CheckBox hideSecond = new CheckBox("二等座");
+        hideSecond = new CheckBox("二等座");
         hideSecond.setSelected(true);
-        CheckBox hideHighSoft = new CheckBox("高软");
+        hideHighSoft = new CheckBox("高软");
         hideHighSoft.setSelected(true);
-        CheckBox hideSoftSleeper = new CheckBox("软卧");
+        hideSoftSleeper = new CheckBox("软卧");
         hideSoftSleeper.setSelected(true);
-        CheckBox hideHardSleeper = new CheckBox("硬卧");
+        hideHardSleeper = new CheckBox("硬卧");
         hideHardSleeper.setSelected(true);
-        CheckBox hideSoftSeat = new CheckBox("软座");
+        hideSoftSeat = new CheckBox("软座");
         hideSoftSeat.setSelected(true);
-        CheckBox hideHardSeat = new CheckBox("硬座");
+        hideHardSeat = new CheckBox("硬座");
         hideHardSeat.setSelected(true);
-        CheckBox hideNoSeat = new CheckBox("无座");
+        hideNoSeat = new CheckBox("无座");
         hideNoSeat.setSelected(true);
-        CheckBox hideOtherSeat = new CheckBox("其他");
+        hideOtherSeat = new CheckBox("其他");
         hideOtherSeat.setSelected(true);
         hideAll.setOnAction(e -> {
             boolean selected = hideAll.isSelected();
@@ -445,21 +561,54 @@ public class MainStage extends Stage {
             hideHardSeat.setSelected(selected);
             hideNoSeat.setSelected(selected);
             hideOtherSeat.setSelected(selected);
+            applyFilters();
         });
+        // 席别筛选变化时触发过滤
+        Runnable seatFilterAction = () -> { syncSelectAll(hideAll, hideBusiness, hideFirstPlus, hideFirst, hideSecond, hideHighSoft, hideSoftSleeper, hideHardSleeper, hideSoftSeat, hideHardSeat, hideNoSeat, hideOtherSeat); applyFilters(); };
+        hideBusiness.setOnAction(e -> seatFilterAction.run());
+        hideFirstPlus.setOnAction(e -> seatFilterAction.run());
+        hideFirst.setOnAction(e -> seatFilterAction.run());
+        hideSecond.setOnAction(e -> seatFilterAction.run());
+        hideHighSoft.setOnAction(e -> seatFilterAction.run());
+        hideSoftSleeper.setOnAction(e -> seatFilterAction.run());
+        hideHardSleeper.setOnAction(e -> seatFilterAction.run());
+        hideSoftSeat.setOnAction(e -> seatFilterAction.run());
+        hideHardSeat.setOnAction(e -> seatFilterAction.run());
+        hideNoSeat.setOnAction(e -> seatFilterAction.run());
+        hideOtherSeat.setOnAction(e -> seatFilterAction.run());
         hideRow.getChildren().addAll(hideLabel, hideAll, hideBusiness, hideFirstPlus, hideFirst, hideSecond,
                 hideHighSoft, hideSoftSleeper, hideHardSleeper, hideSoftSeat, hideHardSeat, hideNoSeat, hideOtherSeat);
 
         leftRows.getChildren().addAll(formFields, modeRow, filterRow, hideRow);
 
         // 右侧：操作框（固定宽度，高度自动匹配左侧4行）
-        CheckBox adultCheck = new CheckBox("成人");
+        adultCheck = new CheckBox("成人");
         adultCheck.setSelected(true);
-        CheckBox studentCheck = new CheckBox("学生");
-        Label transferLink = new Label("查询中转换乘");
+        studentCheck = new CheckBox("学生");
+        // 成人/学生互斥
+        adultCheck.setOnAction(e -> {
+            if (adultCheck.isSelected()) studentCheck.setSelected(false);
+            else if (!studentCheck.isSelected()) adultCheck.setSelected(true); // 至少选一个
+        });
+        studentCheck.setOnAction(e -> {
+            if (studentCheck.isSelected()) adultCheck.setSelected(false);
+            else if (!adultCheck.isSelected()) studentCheck.setSelected(true); // 至少选一个
+        });
+        transferLink = new Label("查询中转换乘");
         transferLink.getStyleClass().add("link-blue");
-        CheckBox onlyAvailableCheck = new CheckBox("只看有票的车次");
-        Label showAllPriceLink = new Label("显示全部票价");
+        transferLink.setCursor(javafx.scene.Cursor.HAND);
+        transferLink.setOnMouseClicked(e -> doOpenTransferPage());
+        onlyAvailableCheck = new CheckBox("只看有票的车次");
+        onlyAvailableCheck.setOnAction(e -> applyFilters());
+        showAllPriceLink = new Label("显示全部票价");
         showAllPriceLink.getStyleClass().add("link-blue");
+        showAllPriceLink.setCursor(javafx.scene.Cursor.HAND);
+        // 鼠标悬浮提示
+        Tooltip priceTip = new Tooltip("查询的是实际票价，显示的卧铺票价均为上铺票价。\n鼠标放到硬卧或者软卧等价格上时会显示其他价格。\n候补卧铺时，先按最高价下铺票价收取，多了会退。\n具体票价以您确认支付时实际购买的铺别票价为准。");
+        priceTip.setWrapText(true);
+        priceTip.setPrefWidth(320);
+        Tooltip.install(showAllPriceLink, priceTip);
+        showAllPriceLink.setOnMouseClicked(e -> doTogglePriceDisplay());
 
         Button queryBtn = new Button("查询车票");
         queryBtn.getStyleClass().add("btn-query");
@@ -577,20 +726,26 @@ public class MainStage extends Stage {
         LocalDate date = datePicker.getValue();
 
         if (fromStation == null || fromStation.trim().isEmpty()) {
-            logger.warn("请输入出发站");
+            logger.info("请输入出发站");
             return;
         }
         if (toStation == null || toStation.trim().isEmpty()) {
-            logger.warn("请输入目的站");
+            logger.info("请输入目的站");
             return;
         }
         if (date == null) {
-            logger.warn("请选择出发日期");
+            logger.info("请选择出发日期");
             return;
         }
 
         String trainDate = date.format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE);
-        logger.info("开始查询车票：{} -> {}, 日期={}", fromStation, toStation, trainDate);
+
+        // 保存车站到搜索历史（分账户）
+        saveStationHistory(fromStation.trim(), toStation.trim());
+
+        // 根据成人/学生票选择 purpose_codes
+        String purposeCodes = studentCheck.isSelected() ? "0X00" : "ADULT";
+        logger.info("开始查询车票：{} -> {}, 日期={}, 类型={}", fromStation, toStation, trainDate, purposeCodes);
 
         // 清空表格（保留表头行）
         if (ticketTableView != null) {
@@ -603,14 +758,12 @@ public class MainStage extends Stage {
             public void onResult(List<Map<String, String>> results) {
                 javafx.application.Platform.runLater(() -> {
                     if (ticketTableView == null) return;
-                    // 保留表头行，只清除数据行
-                    ticketTableView.getItems().removeIf(row -> !row.isHeaderRow());
-                    for (Map<String, String> train : results) {
-                        TableRowData row = new TableRowData();
-                        train.forEach(row::setProperty);
-                        ticketTableView.getItems().add(row);
-                    }
-                    logger.info("表格已更新，共 {} 条记录", results.size());
+                    // 保存原始结果用于后续筛选
+                    allTrainResults = new ArrayList<>(results);
+                    // 应用当前筛选条件
+                    applyFilters();
+                    logger.info("查询到 {} 条记录，筛选后显示 {} 条", results.size(),
+                            ticketTableView.getItems().size() - 1);
                 });
             }
 
@@ -623,15 +776,577 @@ public class MainStage extends Stage {
         });
 
         // 异步查询
-        new Thread(() -> ticketService.queryTickets(fromStation, toStation, trainDate), "ticket-query").start();
+        new Thread(() -> ticketService.queryTickets(fromStation, toStation, trainDate, purposeCodes), "ticket-query").start();
     }
 
     // 清空查询数据（保留表头行）
     private void doClearTickets() {
         if (ticketTableView != null) {
             ticketTableView.getItems().removeIf(row -> !row.isHeaderRow());
+            allTrainResults.clear();
+            originalSeatDataMap.clear();
+            showingPrice = false;
+            if (showAllPriceLink != null) showAllPriceLink.setText("显示全部票价");
             logger.info("已清空查询数据");
         }
+    }
+
+    /**
+     * 查询中转换乘：使用 Selenium 打开浏览器并注入 Cookie 保持登录态
+     */
+    private void doOpenTransferPage() {
+        String fromStation = fromStationField.getText();
+        String toStation = toStationField.getText();
+        LocalDate date = datePicker.getValue();
+
+        if (fromStation == null || fromStation.trim().isEmpty() || toStation == null || toStation.trim().isEmpty()) {
+            logger.info("请先输入出发站和目的站");
+            return;
+        }
+        if (date == null) {
+            logger.info("请选择出发日期");
+            return;
+        }
+
+        String fromCode = com.jactil.javafx.tickethelper.util.StationUtil.findStationCode(fromStation.trim());
+        String toCode = com.jactil.javafx.tickethelper.util.StationUtil.findStationCode(toStation.trim());
+        String dateStr = date.format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE);
+
+        String url = "https://kyfw.12306.cn/otn/lcQuery/init?linktypeid=lx"
+                + "&fs=" + java.net.URLEncoder.encode(fromStation.trim() + "," + fromCode, java.nio.charset.StandardCharsets.UTF_8)
+                + "&ts=" + java.net.URLEncoder.encode(toStation.trim() + "," + toCode, java.nio.charset.StandardCharsets.UTF_8)
+                + "&date=" + dateStr
+                + "&flag=N,N,Y";
+
+        logger.info("打开中转换乘页面：{}", url);
+
+        // 使用 Selenium 启动浏览器并注入 Cookie（与 doOpen12306 相同模式）
+        new Thread(() -> {
+            org.openqa.selenium.WebDriver driver = null;
+            java.util.List<okhttp3.Cookie> okCookies =
+                    com.jactil.javafx.tickethelper.util.HttpClientUtil.getAllCookies();
+            String sessionId = java.util.UUID.randomUUID().toString().substring(0, 8);
+            String tmpDir = System.getProperty("java.io.tmpdir") + "/tickethelper-transfer-" + sessionId;
+
+            String[] browsers = {"edge", "chrome"};
+            for (String browser : browsers) {
+                try {
+                    if ("edge".equals(browser)) {
+                        org.openqa.selenium.edge.EdgeOptions options = new org.openqa.selenium.edge.EdgeOptions();
+                        options.addArguments("--user-data-dir=" + tmpDir);
+                        options.addArguments("--no-first-run", "--no-default-browser-check");
+                        options.addArguments("--disable-blink-features=AutomationControlled");
+                        options.setExperimentalOption("excludeSwitches", java.util.Arrays.asList("enable-automation"));
+                        driver = new org.openqa.selenium.edge.EdgeDriver(options);
+                    } else {
+                        org.openqa.selenium.chrome.ChromeOptions options = new org.openqa.selenium.chrome.ChromeOptions();
+                        options.addArguments("--user-data-dir=" + tmpDir);
+                        options.addArguments("--no-first-run", "--no-default-browser-check");
+                        options.addArguments("--disable-blink-features=AutomationControlled");
+                        options.setExperimentalOption("excludeSwitches", java.util.Arrays.asList("enable-automation"));
+                        driver = new org.openqa.selenium.chrome.ChromeDriver(options);
+                    }
+                    break;
+                } catch (Exception e) {
+                    logger.warn("[中转换乘] {} 启动失败: {}", browser, e.getMessage());
+                    if (driver != null) { try { driver.quit(); } catch (Exception ignored) {}
+                        driver = null; }
+                }
+            }
+
+            if (driver == null) {
+                // Selenium 全部失败，尝试直接启动 Edge 并通过 CDP 注入 Cookie
+                boolean cdpSuccess = tryLaunchEdgeWithCdp(url, okCookies);
+                if (!cdpSuccess) {
+                    // 最终回退：系统默认浏览器（无登录态）
+                    try {
+                        java.awt.Desktop.getDesktop().browse(java.net.URI.create(url));
+                    } catch (Exception ex) {
+                        logger.error("[中转换乘] 打开浏览器失败", ex);
+                    }
+                    javafx.application.Platform.runLater(() -> {
+                        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                        alert.setTitle("提示");
+                        alert.setHeaderText(null);
+                        alert.setContentText("已使用系统默认浏览器打开中转换乘页面。\n\n⚠ 由于浏览器驱动无法启动，无法自动注入登录信息。\n请在打开的浏览器中手动登录12306账号后，页面将自动加载。\n\n💡 建议：确保 Edge 或 Chrome 浏览器已安装，\n   并保持网络连接以自动下载浏览器驱动。");
+                        alert.showAndWait();
+                    });
+                }
+                return;
+            }
+
+            try {
+                // 先访问 12306 域名以设置 Cookie
+                driver.get("https://kyfw.12306.cn");
+                org.openqa.selenium.WebDriver.Options manage = driver.manage();
+                for (okhttp3.Cookie c : okCookies) {
+                    try {
+                        manage.addCookie(new org.openqa.selenium.Cookie(
+                                c.name(), c.value(),
+                                c.domain() != null ? c.domain() : ".12306.cn",
+                                "/", new java.util.Date(c.expiresAt()), c.secure(), c.httpOnly()));
+                    } catch (Exception e) {
+                        logger.debug("[中转换乘] Cookie 注入失败 [{}]: {}", c.name(), e.getMessage());
+                    }
+                }
+                // 导航到中转换乘页面
+                driver.get(url);
+                logger.info("[中转换乘] 页面已打开");
+            } catch (Exception e) {
+                logger.error("[中转换乘] 操作失败", e);
+                try { driver.quit(); } catch (Exception ignored) {}
+            }
+        }, "transfer-browser").start();
+    }
+
+    /**
+     * 尝试直接启动 Edge 浏览器并通过 CDP 注入 Cookie
+     * 绕过 Selenium Manager 的驱动下载，直接连接已安装的 Edge
+     */
+    private boolean tryLaunchEdgeWithCdp(String url, java.util.List<okhttp3.Cookie> okCookies) {
+        try {
+            // 查找 Edge 浏览器可执行文件
+            String edgePath = findEdgeExecutable();
+            if (edgePath == null) {
+                logger.info("[中转换乘] 未找到 Edge 浏览器");
+                return false;
+            }
+
+            int debugPort = 9222;
+            logger.info("[中转换乘] 尝试通过 CDP 启动 Edge (端口={})", debugPort);
+
+            // 启动 Edge 并开启远程调试端口
+            ProcessBuilder pb = new ProcessBuilder(
+                    edgePath,
+                    "--remote-debugging-port=" + debugPort,
+                    "--user-data-dir=" + System.getProperty("java.io.tmpdir") + "/tickethelper-cdp-" + java.util.UUID.randomUUID().toString().substring(0, 8),
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    url
+            );
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+
+            // 等待浏览器启动
+            Thread.sleep(3000);
+
+            // 通过 CDP 注入 Cookie
+            injectCookiesViaCdp(debugPort, okCookies, url);
+
+            logger.info("[中转换乘] Edge CDP 模式启动成功");
+            return true;
+        } catch (Exception e) {
+            logger.warn("[中转换乘] Edge CDP 启动失败: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /** 查找 Edge 浏览器可执行文件路径 */
+    private String findEdgeExecutable() {
+        String[] candidates = {
+                System.getenv("ProgramFiles(x86)") + "\\Microsoft\\Edge\\Application\\msedge.exe",
+                System.getenv("ProgramFiles") + "\\Microsoft\\Edge\\Application\\msedge.exe",
+                System.getenv("LOCALAPPDATA") + "\\Microsoft\\Edge\\Application\\msedge.exe"
+        };
+        for (String path : candidates) {
+            if (path != null && java.nio.file.Files.exists(java.nio.file.Paths.get(path))) {
+                return path;
+            }
+        }
+        return null;
+    }
+
+    /** 通过 CDP 协议向浏览器注入 Cookie */
+    private void injectCookiesViaCdp(int port, java.util.List<okhttp3.Cookie> okCookies, String targetUrl) {
+        try {
+            String cookieJson = buildCdpCookieJson(okCookies);
+            String cdpUrl = "http://localhost:" + port + "/json/new?about:blank";
+            // 先创建一个空白页获取 wsUrl
+            String newPageResponse = HttpClientUtil.get(cdpUrl);
+            if (newPageResponse != null) {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                com.fasterxml.jackson.databind.JsonNode node = mapper.readTree(newPageResponse);
+                String wsUrl = node.path("webSocketDebuggerUrl").asText();
+                if (!wsUrl.isEmpty()) {
+                    // 通过 WebSocket 发送 CDP 命令注入 Cookie
+                    final java.util.concurrent.CountDownLatch wsLatch = new java.util.concurrent.CountDownLatch(1);
+                    java.net.http.WebSocket ws = java.net.http.HttpClient.newHttpClient().newWebSocketBuilder()
+                            .buildAsync(java.net.URI.create(wsUrl), new java.net.http.WebSocket.Listener() {
+                                @Override
+                                public void onOpen(java.net.http.WebSocket ws) {
+                                    String setCookieCmd = "{\"id\":1,\"method\":\"Network.setCookies\",\"params\":{\"cookies\":" + cookieJson + "}}";
+                                    ws.sendText(setCookieCmd, true);
+                                    ws.request(1);
+                                }
+                                @Override
+                                public java.util.concurrent.CompletionStage<?> onText(java.net.http.WebSocket ws, CharSequence data, boolean last) {
+                                    // 收到响应后导航到目标页面
+                                    String navigateCmd = "{\"id\":2,\"method\":\"Page.navigate\",\"params\":{\"url\":\"" + targetUrl.replace("\"", "\\\"") + "\"}}";
+                                    ws.sendText(navigateCmd, true);
+                                    ws.request(1);
+                                    wsLatch.countDown();
+                                    return java.util.concurrent.CompletableFuture.completedFuture(null);
+                                }
+                                @Override
+                                public void onError(java.net.http.WebSocket ws, Throwable error) {
+                                    logger.debug("[中转换乘] CDP WebSocket 错误: {}", error.getMessage());
+                                    wsLatch.countDown();
+                                }
+                            }).get(5, java.util.concurrent.TimeUnit.SECONDS);
+                    ws.request(1);
+                    // 等待 Cookie 注入和页面导航完成
+                    wsLatch.await(5, java.util.concurrent.TimeUnit.SECONDS);
+                    ws.sendClose(java.net.http.WebSocket.NORMAL_CLOSURE, "done");
+                }
+            }
+        } catch (Exception e) {
+            logger.debug("[中转换乘] CDP Cookie 注入失败: {}", e.getMessage());
+        }
+    }
+
+    /** 构建 CDP setCookies 命令所需的 Cookie JSON */
+    private String buildCdpCookieJson(java.util.List<okhttp3.Cookie> okCookies) {
+        StringBuilder sb = new StringBuilder("[");
+        boolean first = true;
+        for (okhttp3.Cookie c : okCookies) {
+            if (!first) sb.append(",");
+            first = false;
+            sb.append("{\"name\":\"").append(escapeJson(c.name())).append("\"");
+            sb.append(",\"value\":\"").append(escapeJson(c.value())).append("\"");
+            sb.append(",\"domain\":\"").append(escapeJson(c.domain() != null ? c.domain() : ".12306.cn")).append("\"");
+            sb.append(",\"path\":\"/\"");
+            sb.append(",\"secure\":").append(c.secure());
+            sb.append(",\"httpOnly\":").append(c.httpOnly());
+            if (c.expiresAt() > 0) {
+                sb.append(",\"expires\":").append(c.expiresAt() / 1000);
+            }
+            sb.append("}");
+        }
+        sb.append("]");
+        return sb.toString();
+    }
+
+    private String escapeJson(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r");
+    }
+
+    /**
+     * 切换余票/票价显示
+     */
+    private void doTogglePriceDisplay() {
+        if (allTrainResults.isEmpty()) {
+            logger.warn("请先查询车票");
+            return;
+        }
+
+        if (!showingPrice) {
+            // 切换到票价显示：先备份原始数据，再查询票价
+            showingPrice = true;
+            showAllPriceLink.setText("恢复显示余票");
+
+            // 备份当前表格中的原始席别数据
+            originalSeatDataMap.clear();
+            for (TableRowData row : ticketTableView.getItems()) {
+                if (row.isHeaderRow()) continue;
+                String trainNo = row.getProperty("车次").get();
+                Map<String, String> seatBackup = new HashMap<>();
+                for (String seatCol : SEAT_COLUMNS) {
+                    seatBackup.put(seatCol, row.getProperty(seatCol).get());
+                }
+                originalSeatDataMap.put(trainNo, seatBackup);
+            }
+
+            // 异步查询票价
+            new Thread(() -> doQueryPrices(), "price-query").start();
+        } else {
+            // 切换回余票显示
+            showingPrice = false;
+            showAllPriceLink.setText("显示全部票价");
+
+            // 恢复原始席别数据
+            javafx.application.Platform.runLater(() -> {
+                for (TableRowData row : ticketTableView.getItems()) {
+                    if (row.isHeaderRow()) continue;
+                    String trainNo = row.getProperty("车次").get();
+                    Map<String, String> backup = originalSeatDataMap.get(trainNo);
+                    if (backup != null) {
+                        for (Map.Entry<String, String> entry : backup.entrySet()) {
+                            row.setProperty(entry.getKey(), entry.getValue());
+                        }
+                    }
+                }
+                logger.info("已恢复余票显示");
+            });
+        }
+    }
+
+    /** 席别列名列表 */
+    private static final String[] SEAT_COLUMNS = {"商务/特等", "优选一等座", "一等座", "二等座", "高级软卧", "软卧", "硬卧", "软座", "硬座", "无座"};
+
+    /**
+     * 显示票价（从已解析的原始数据中直接获取，无需额外API调用）
+     */
+    private void doQueryPrices() {
+        try {
+            final boolean[] hasAnyPrice = {false};
+            java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+            javafx.application.Platform.runLater(() -> {
+                try {
+                    for (TableRowData row : ticketTableView.getItems()) {
+                        if (row.isHeaderRow()) continue;
+                        String trainNo = row.getProperty("车次").get();
+                        // 从 allTrainResults 中找到对应的原始数据（含票价）
+                        for (Map<String, String> train : allTrainResults) {
+                            if (trainNo.equals(train.get("车次"))) {
+                                // 遍历所有席别列，检查是否有票价数据
+                                for (String seatCol : SEAT_COLUMNS) {
+                                    String priceVal = train.get("_price_" + seatCol);
+                                    if (priceVal != null) {
+                                        row.setProperty(seatCol, priceVal);
+                                        hasAnyPrice[0] = true;
+                                    } else {
+                                        row.setProperty(seatCol, "--");
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                } finally {
+                    latch.countDown();
+                }
+            });
+            latch.await();
+            if (hasAnyPrice[0]) {
+                javafx.application.Platform.runLater(() -> logger.info("票价显示完成（从查询结果中直接解析）"));
+            } else {
+                javafx.application.Platform.runLater(() -> {
+                    logger.info("票价显示完成，但未找到任何票价数据");
+                    Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                    alert.setTitle("提示");
+                    alert.setHeaderText(null);
+                    alert.setContentText("当前查询结果中没有票价数据。\n\n可能原因：\n1. 该车次尚未开售，12306 暂未返回票价信息\n2. 该车次已停运或无票价数据\n\n请在开售后重新查询。");
+                    alert.showAndWait();
+                });
+            }
+        } catch (Exception e) {
+            logger.error("显示票价异常", e);
+        }
+    }
+
+    /**
+     * 应用前端筛选条件（车次类型 + 席别 + 发车时间）
+     * 从 allTrainResults 中过滤后刷新表格
+     */
+    private void applyFilters() {
+        if (ticketTableView == null) return;
+
+        // 清除旧数据行（保留表头行）
+        ticketTableView.getItems().removeIf(row -> !row.isHeaderRow());
+
+        if (allTrainResults.isEmpty()) return;
+
+        // 1. 发车时间筛选
+        String timeRange = departTimeCombo.getValue();
+        int filterStartMin = 0, filterEndMin = 24 * 60;
+        if (timeRange != null && !"00:00-24:00".equals(timeRange)) {
+            String[] parts = timeRange.split("-");
+            if (parts.length == 2) {
+                filterStartMin = parseTimeToMinutes(parts[0]);
+                filterEndMin = parseTimeToMinutes(parts[1]);
+            }
+        }
+
+        // 2. 车次类型筛选
+        boolean showG = filterG.isSelected();
+        boolean showD = filterD.isSelected();
+        boolean showZ = filterZ.isSelected();
+        boolean showT = filterT.isSelected();
+        boolean showK = filterK.isSelected();
+        boolean showOther = filterOther.isSelected();
+
+        // 3. 席别筛选：选中的席别表示要显示该席别有票的车次
+        boolean seatBusiness = hideBusiness.isSelected();
+        boolean seatFirstPlus = hideFirstPlus.isSelected();
+        boolean seatFirst = hideFirst.isSelected();
+        boolean seatSecond = hideSecond.isSelected();
+        boolean seatHighSoft = hideHighSoft.isSelected();
+        boolean seatSoftSleeper = hideSoftSleeper.isSelected();
+        boolean seatHardSleeper = hideHardSleeper.isSelected();
+        boolean seatSoftSeat = hideSoftSeat.isSelected();
+        boolean seatHardSeat = hideHardSeat.isSelected();
+        boolean seatNoSeat = hideNoSeat.isSelected();
+        // 如果所有席别都选中，则不过滤（显示所有）
+        boolean filterBySeat = !(seatBusiness && seatFirstPlus && seatFirst && seatSecond
+                && seatHighSoft && seatSoftSleeper && seatHardSleeper
+                && seatSoftSeat && seatHardSeat && seatNoSeat);
+
+        int count = 0;
+        for (Map<String, String> train : allTrainResults) {
+            // 车次类型过滤
+            String trainNo = train.getOrDefault("车次", "");
+            if (!matchTrainType(trainNo, showG, showD, showZ, showT, showK, showOther)) {
+                continue;
+            }
+
+            // 发车时间过滤（从"出发地"字段提取时间，格式"站名 HH:mm"）
+            String departStr = train.getOrDefault("出发地", "");
+            int departMin = extractDepartMinutes(departStr);
+            if (departMin >= 0) {
+                if (filterEndMin <= filterStartMin) {
+                    // 跨午夜时段，如 18:00-24:00 或 18:00-06:00
+                    if (departMin < filterStartMin && departMin >= filterEndMin) continue;
+                } else {
+                    if (departMin < filterStartMin || departMin >= filterEndMin) continue;
+                }
+            }
+
+            // 同城车站筛选：检查出发站和到达站是否在筛选列表中
+            if (!fromCityFilters.isEmpty() || !toCityFilters.isEmpty()) {
+                // 从"出发地"提取站名（格式"站名 HH:mm"）
+                String fromStationInTrain = departStr.contains(" ") ? departStr.substring(0, departStr.indexOf(" ")).trim() : departStr.trim();
+                // 从"目的地"提取站名
+                String arriveStr = train.getOrDefault("目的地", "");
+                String toStationInTrain = arriveStr.contains(" ") ? arriveStr.substring(0, arriveStr.indexOf(" ")).trim() : arriveStr.trim();
+
+                // 检查出发站
+                if (!fromCityFilters.isEmpty()) {
+                    String fromCityCode = StationUtil.findStationCityCode(fromStationInTrain);
+                    java.util.Set<String> allowedFrom = fromCityFilters.get(fromCityCode);
+                    if (allowedFrom != null && !allowedFrom.isEmpty() && !allowedFrom.contains(fromStationInTrain)) {
+                        continue; // 出发站不在筛选列表中
+                    }
+                }
+                // 检查到达站
+                if (!toCityFilters.isEmpty()) {
+                    String toCityCode = StationUtil.findStationCityCode(toStationInTrain);
+                    java.util.Set<String> allowedTo = toCityFilters.get(toCityCode);
+                    if (allowedTo != null && !allowedTo.isEmpty() && !allowedTo.contains(toStationInTrain)) {
+                        continue; // 到达站不在筛选列表中
+                    }
+                }
+            }
+
+            // 只看有票车次过滤：至少有一个席别显示"有"或数字的车次才保留
+            if (onlyAvailableCheck != null && onlyAvailableCheck.isSelected()) {
+                boolean hasAnyTicket = false;
+                for (String seatCol : SEAT_COLUMNS) {
+                    if (hasTicket(train.get(seatCol))) {
+                        hasAnyTicket = true;
+                        break;
+                    }
+                }
+                if (!hasAnyTicket) continue;
+            }
+
+            // 席别过滤：至少有一个选中的席别显示"有票"
+            if (filterBySeat) {
+                boolean hasAvailableSeat = false;
+                if (seatBusiness && hasTicket(train.get("商务/特等"))) hasAvailableSeat = true;
+                if (seatFirstPlus && hasTicket(train.get("优选一等座"))) hasAvailableSeat = true;
+                if (seatFirst && hasTicket(train.get("一等座"))) hasAvailableSeat = true;
+                if (seatSecond && hasTicket(train.get("二等座"))) hasAvailableSeat = true;
+                if (seatHighSoft && hasTicket(train.get("高级软卧"))) hasAvailableSeat = true;
+                if (seatSoftSleeper && hasTicket(train.get("软卧"))) hasAvailableSeat = true;
+                if (seatHardSleeper && hasTicket(train.get("硬卧"))) hasAvailableSeat = true;
+                if (seatSoftSeat && hasTicket(train.get("软座"))) hasAvailableSeat = true;
+                if (seatHardSeat && hasTicket(train.get("硬座"))) hasAvailableSeat = true;
+                if (seatNoSeat && hasTicket(train.get("无座"))) hasAvailableSeat = true;
+                if (!hasAvailableSeat) continue;
+            }
+
+            TableRowData row = new TableRowData();
+            train.forEach(row::setProperty);
+            ticketTableView.getItems().add(row);
+            count++;
+        }
+
+        logger.debug("筛选后显示 {}/{} 条记录", count, allTrainResults.size());
+
+        // 更新摘要提示：深圳北 --> 广州南（6月16日 周二）共计279个车次
+        if (querySummaryLabel != null) {
+            String from = fromStationField.getText();
+            String to = toStationField.getText();
+            LocalDate date = datePicker.getValue();
+            String dayOfWeek = "";
+            if (date != null) {
+                java.time.format.DateTimeFormatter fmt = java.time.format.DateTimeFormatter.ofPattern("M月d日 EEE", java.util.Locale.CHINESE);
+                dayOfWeek = date.format(fmt);
+            }
+            String summary = String.format("%s --> %s（%s）共计%d个车次", from, to, dayOfWeek, count);
+            querySummaryLabel.setText(summary);
+        }
+
+        // 如果处于票价显示模式，筛选后需要重新查询票价
+        if (showingPrice && count > 0) {
+            new Thread(() -> doQueryPrices(), "price-query-filter").start();
+        }
+    }
+
+    /**
+     * 判断车次是否匹配选中的车次类型
+     */
+    private boolean matchTrainType(String trainNo, boolean showG, boolean showD, boolean showZ,
+                                   boolean showT, boolean showK, boolean showOther) {
+        if (trainNo == null || trainNo.isEmpty()) return showOther;
+        char first = trainNo.charAt(0);
+        switch (first) {
+            case 'G': case 'C': return showG; // 高铁/城际
+            case 'D': return showD;             // 动车
+            case 'Z': return showZ;             // Z直达
+            case 'T': return showT;             // T特快
+            case 'K': return showK;             // K快速
+            default: return showOther;          // 其他（普快等）
+        }
+    }
+
+    /**
+     * 从"出发地"字段提取出发时间（分钟数）
+     * 出发地格式："站名 HH:mm"
+     */
+    private int extractDepartMinutes(String departStr) {
+        if (departStr == null || departStr.isEmpty()) return -1;
+        int spaceIdx = departStr.lastIndexOf(' ');
+        if (spaceIdx < 0) return -1;
+        String timeStr = departStr.substring(spaceIdx + 1).trim();
+        return parseTimeToMinutes(timeStr);
+    }
+
+    /**
+     * 将 "HH:mm" 格式时间转为分钟数
+     */
+    private int parseTimeToMinutes(String timeStr) {
+        try {
+            String[] parts = timeStr.split(":");
+            return Integer.parseInt(parts[0]) * 60 + Integer.parseInt(parts[1]);
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    /**
+     * 判断席别是否有票（"有" 或 数字 > 0）
+     */
+    private boolean hasTicket(String seatVal) {
+        if (seatVal == null || seatVal.isEmpty() || "无".equals(seatVal) || "--".equals(seatVal)) return false;
+        if ("有".equals(seatVal)) return true;
+        try {
+            return Integer.parseInt(seatVal) > 0;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    /**
+     * 同步"全选/全部"复选框状态：当所有子项都选中时自动勾选全选，否则取消全选
+     */
+    private void syncSelectAll(CheckBox selectAllBox, CheckBox... items) {
+        boolean allSelected = true;
+        for (CheckBox cb : items) {
+            if (!cb.isSelected()) { allSelected = false; break; }
+        }
+        selectAllBox.setSelected(allSelected);
     }
 
     // ==================== 设置区域 ====================
@@ -650,77 +1365,100 @@ public class MainStage extends Stage {
         titleBar.getChildren().add(toggleLabel);
         settingsBox.getChildren().add(titleBar);
 
-        // 设置内容区：左侧设置 + 右侧输出
+        // 设置内容区：三列布局（抢票设置 | 输出区 | 通用设置+其他设置）
         HBox contentBox = new HBox(0);
         contentBox.setPadding(new Insets(4, 8, 8, 8));
 
-        // 左侧：设置面板
+        // ===== 第1列：抢票设置 TabPane（固定宽度，不伸缩） =====
         VBox leftPanel = new VBox(0);
-        leftPanel.setPrefWidth(420);
-        leftPanel.setMinWidth(380);
+        leftPanel.getStyleClass().add("settings-panel-border");
+        leftPanel.setPrefWidth(520);
+        leftPanel.setMinWidth(480);
 
-        // 设置 TabPane
         TabPane settingsTabPane = new TabPane();
         settingsTabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
-        settingsTabPane.setPrefHeight(200);
 
-        // 抢票设置
         Tab grabTab = new Tab("抢票设置");
         grabTab.setContent(createGrabSettings());
-        // 其他设置tab（占位）
         Tab queryTab = new Tab("查询起售");
         queryTab.setContent(createPlaceholderContent("查询起售功能（待实现）"));
         Tab tencentTab = new Tab("腾讯通知");
         tencentTab.setContent(createPlaceholderContent("腾讯通知功能（待实现）"));
         Tab emailTab = new Tab("邮件通知");
-        emailTab.setContent(createPlaceholderContent("邮件通知功能（待实现）"));
+        emailTab.setContent(createEmailSettings());
         Tab wechatTab = new Tab("微信通知");
-        wechatTab.setContent(createPlaceholderContent("微信通知功能（待实现）"));
+        wechatTab.setContent(createWechatSettings());
         Tab autoPayTab = new Tab("自动支付");
-        autoPayTab.setContent(createPlaceholderContent("自动支付功能（待实现）"));
+        autoPayTab.setContent(createAutoPaySettings());
         Tab multiTaskTab = new Tab("多任务设置");
         multiTaskTab.setContent(createPlaceholderContent("多任务设置功能（待实现）"));
 
         settingsTabPane.getTabs().addAll(grabTab, queryTab, tencentTab, emailTab, wechatTab, autoPayTab, multiTaskTab);
         leftPanel.getChildren().add(settingsTabPane);
 
-        // 右侧：输出区 + 通用设置
-        VBox rightPanel = new VBox(0);
-        HBox.setHgrow(rightPanel, Priority.ALWAYS);
+        // ===== 第2列：输出区（唯一伸缩列） =====
+        VBox middlePanel = new VBox(0);
+        middlePanel.getStyleClass().add("settings-panel-border");
+        middlePanel.setMinWidth(200);
+        HBox.setHgrow(middlePanel, Priority.ALWAYS);
 
-        // 输出区标题
-        HBox logTitle = new HBox();
-        logTitle.setAlignment(Pos.CENTER_LEFT);
-        logTitle.setPadding(new Insets(4, 8, 2, 8));
+        // 输出区标题栏（输出区在左，查找日志在最右）
+        HBox logTitleBar = new HBox();
+        logTitleBar.setAlignment(Pos.CENTER_LEFT);
+        logTitleBar.setPadding(new Insets(6, 8, 4, 8));
+        logTitleBar.getStyleClass().add("log-title-bar");
         Label logTitleLabel = new Label("输出区");
         logTitleLabel.getStyleClass().add("section-title");
-        HBox.setHgrow(logTitleLabel, Priority.ALWAYS);
+        Region logSpacer = new Region();
+        HBox.setHgrow(logSpacer, Priority.ALWAYS);
         Label findLogLink = new Label("查找日志");
         findLogLink.getStyleClass().add("link-blue");
-        logTitle.getChildren().addAll(logTitleLabel, findLogLink);
+        findLogLink.setOnMouseClicked(e -> openLogDirectory());
+        logTitleBar.getChildren().addAll(logTitleLabel, logSpacer, findLogLink);
 
-        // 日志输出区
-        logArea = new TextArea();
-        logArea.setEditable(false);
-        logArea.setPrefHeight(160);
+        logArea = new VBox(0);
         logArea.getStyleClass().add("log-area");
-        logArea.appendText("等待查询...\n");
+        logArea.setPadding(new Insets(6));
 
-        // 通用设置 / 其他设置
+        // 初始提示文字
+        Text waitText = new Text("等待查询...\n");
+        waitText.setFill(javafx.scene.paint.Color.BLUE);
+        logArea.getChildren().add(waitText);
+
+        // 用 ScrollPane 包裹实现滚动
+        logScrollPane = new ScrollPane(logArea);
+        logScrollPane.setFitToWidth(true);
+        logScrollPane.getStyleClass().add("log-scroll-pane");
+        VBox.setVgrow(logScrollPane, Priority.ALWAYS);
+
+        middlePanel.getChildren().addAll(logTitleBar, logScrollPane);
+
+        // ===== 第3列：通用设置 + 其他设置 + 开始抢票按钮（固定宽度，不伸缩） =====
+        VBox rightPanel = new VBox(0);
+        rightPanel.getStyleClass().add("settings-panel-border");
+        rightPanel.setPrefWidth(370);
+        rightPanel.setMinWidth(370);
+
         TabPane rightTabPane = new TabPane();
         rightTabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
-        rightTabPane.setPrefHeight(120);
 
         Tab commonTab = new Tab("通用设置");
         commonTab.setContent(createCommonSettings());
         Tab otherTab = new Tab("其他设置");
-        otherTab.setContent(createPlaceholderContent("其他设置（待实现）"));
+        otherTab.setContent(createOtherSettings());
 
         rightTabPane.getTabs().addAll(commonTab, otherTab);
 
-        rightPanel.getChildren().addAll(logTitle, logArea, rightTabPane);
+        // 开始抢票按钮
+        Button startGrabBtn = new Button("开始抢票");
+        startGrabBtn.getStyleClass().add("btn-start-grab");
+        startGrabBtn.setMaxWidth(Double.MAX_VALUE);
+        startGrabBtn.setPrefHeight(40);
+        startGrabBtn.setOnAction(e -> onStartGrab());
 
-        contentBox.getChildren().addAll(leftPanel, rightPanel);
+        rightPanel.getChildren().addAll(rightTabPane, startGrabBtn);
+
+        contentBox.getChildren().addAll(leftPanel, middlePanel, rightPanel);
         settingsBox.getChildren().add(contentBox);
 
         return settingsBox;
@@ -728,64 +1466,115 @@ public class MainStage extends Stage {
 
     // ==================== 抢票设置内容 ====================
 
+    /** 乘客列表控件（后续通过接口填充） */
+    private ListView<String> passengerListView;
+    /** 席别列表控件（后续通过接口填充） */
+    private ListView<String> seatListView;
+    /** 已选车次列表控件（后续通过接口填充） */
+    private ListView<String> selectedTrainListView;
+
+    /**
+     * 创建带 CheckBox 的 ListView 单元格工厂
+     */
+    private javafx.util.Callback<javafx.scene.control.ListView<String>, javafx.scene.control.ListCell<String>> checkBoxCellFactory() {
+        return lv -> new javafx.scene.control.ListCell<>() {
+            private final CheckBox checkBox = new CheckBox();
+            {
+                checkBox.setOnAction(e -> {
+                    if (getItem() != null) {
+                        // toggle selection visual
+                        setStyle(checkBox.isSelected() ? "-fx-background-color: #1976D2; -fx-text-fill: white;" : "");
+                    }
+                });
+            }
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setGraphic(null);
+                    setText(null);
+                } else {
+                    checkBox.setText(item);
+                    setGraphic(checkBox);
+                    setText(null);
+                }
+            }
+        };
+    }
+
     private VBox createGrabSettings() {
         VBox box = new VBox(6);
         box.setPadding(new Insets(8));
 
-        // 乘客/席别/已选车次 三列
+        // 4列横排布局：乘客 | 席别 | 已选车次 | 可选设置
         HBox topRow = new HBox(8);
+        HBox.setHgrow(topRow, Priority.ALWAYS);
 
-        // 乘客列表
+        // 第1列：乘客列表（下拉勾选框，数据后续通过接口填充）
         VBox passengerBox = new VBox(4);
         Label passengerTitle = new Label("*乘客: 加儿童 (0/14)");
         passengerTitle.getStyleClass().add("setting-label");
-        ListView<String> passengerList = new ListView<>();
-        passengerList.getItems().addAll("姜来[成人]", "何秀玲[成人]", "卓超[成人]", "周良翼[成人]",
-                "姜善周[成人]", "曹祥文[未填]", "曾文翔[成人]", "李奈仁[成人]", "李淑华[成人]", "柳婉清[成人]");
-        passengerList.setPrefHeight(120);
-        passengerList.getStyleClass().add("setting-list");
-        passengerBox.getChildren().addAll(passengerTitle, passengerList);
+        passengerListView = new ListView<>();
+        passengerListView.setPrefHeight(130);
+        passengerListView.setPlaceholder(new Label("暂无乘客数据"));
+        passengerListView.getStyleClass().add("setting-list");
+        passengerListView.setCellFactory(checkBoxCellFactory());
+        passengerBox.getChildren().addAll(passengerTitle, passengerListView);
+        HBox.setHgrow(passengerBox, Priority.ALWAYS);
 
-        // 席别列表
+        // 第2列：席别列表（下拉勾选框，数据后续通过接口填充）
         VBox seatBox = new VBox(4);
         Label seatTitle = new Label("*席别: 选辅 (0/22)");
         seatTitle.getStyleClass().add("setting-label");
-        ListView<String> seatList = new ListView<>();
-        seatList.getItems().addAll("硬卧", "硬座", "二等座", "一等座", "无座", "软卧", "软座", "商务座", "高级软卧", "优选一等座");
-        seatList.setPrefHeight(120);
-        seatList.getSelectionModel().select(0);
-        seatList.getStyleClass().add("setting-list");
-        seatBox.getChildren().addAll(seatTitle, seatList);
+        seatListView = new ListView<>();
+        seatListView.setPrefHeight(130);
+        seatListView.setPlaceholder(new Label("暂无席别数据"));
+        seatListView.getStyleClass().add("setting-list");
+        seatListView.setCellFactory(checkBoxCellFactory());
+        seatBox.getChildren().addAll(seatTitle, seatListView);
+        HBox.setHgrow(seatBox, Priority.ALWAYS);
 
-        // 已选车次
+        // 第3列：已选车次（数据后续通过接口填充）
         VBox trainBox = new VBox(4);
         Label trainTitle = new Label("*已选车次:");
         trainTitle.getStyleClass().add("setting-label");
-        ListView<String> trainList = new ListView<>();
-        trainList.setPrefHeight(120);
-        trainList.setPlaceholder(new Label("可选设置:"));
-        trainList.getStyleClass().add("setting-list");
-        trainBox.getChildren().addAll(trainTitle, trainList);
+        selectedTrainListView = new ListView<>();
+        selectedTrainListView.setPrefHeight(130);
+        selectedTrainListView.setPlaceholder(new Label("暂无已选车次"));
+        selectedTrainListView.getStyleClass().add("setting-list");
+        trainBox.getChildren().addAll(trainTitle, selectedTrainListView);
+        HBox.setHgrow(trainBox, Priority.ALWAYS);
 
-        topRow.getChildren().addAll(passengerBox, seatBox, trainBox);
-
-        // 选项区
+        // 第4列：可选设置（复刻 Bypass UI）
         VBox optionsBox = new VBox(4);
-        CheckBox autoWaitlist = new CheckBox("自动抢候补 设置");
+        Label optionsTitle = new Label("可选设置:");
+        optionsTitle.getStyleClass().add("setting-label");
+
+        CheckBox autoWaitlist = new CheckBox("自动抢候补");
+        autoWaitlist.getStyleClass().add("setting-checkbox");
         CheckBox priorityWaitlist = new CheckBox("优先候补不抢票");
+        priorityWaitlist.getStyleClass().add("setting-checkbox");
         CheckBox byTrainOrder = new CheckBox("按车次顺序提交");
+        byTrainOrder.getStyleClass().add("setting-checkbox");
         CheckBox selectBerth = new CheckBox("选上下铺和选座");
-        CheckBox autoPay = new CheckBox("抢到自动付 设置");
-        CheckBox grabExtra = new CheckBox("抢增开列车 设置");
+        selectBerth.getStyleClass().add("setting-checkbox");
+        CheckBox autoPay = new CheckBox("抢到自动付");
+        autoPay.getStyleClass().add("setting-checkbox");
+        CheckBox grabExtra = new CheckBox("抢增开列车");
+        grabExtra.getStyleClass().add("setting-checkbox");
 
-        HBox timeRow = new HBox(4);
-        timeRow.setAlignment(Pos.CENTER_LEFT);
-        Label timeLabel = new Label("00:00-24:00");
-        timeRow.getChildren().add(timeLabel);
+        // 时间范围选择
+        ComboBox<String> timeRangeCombo = new ComboBox<>();
+        timeRangeCombo.getItems().addAll("00:00-24:00", "06:00-12:00", "12:00-18:00", "18:00-24:00");
+        timeRangeCombo.setValue("00:00-24:00");
+        timeRangeCombo.setPrefWidth(110);
 
-        optionsBox.getChildren().addAll(autoWaitlist, priorityWaitlist, byTrainOrder, selectBerth, autoPay, grabExtra, timeRow);
+        optionsBox.getChildren().addAll(optionsTitle, autoWaitlist, priorityWaitlist,
+                byTrainOrder, selectBerth, autoPay, grabExtra, timeRangeCombo);
+        HBox.setHgrow(optionsBox, Priority.ALWAYS);
 
-        box.getChildren().addAll(topRow, optionsBox);
+        topRow.getChildren().addAll(passengerBox, seatBox, trainBox, optionsBox);
+        box.getChildren().add(topRow);
         return box;
     }
 
@@ -795,31 +1584,110 @@ public class MainStage extends Stage {
         VBox box = new VBox(6);
         box.setPadding(new Insets(8));
 
+        // 定时抢票
+        HBox timedRow = new HBox(6);
+        timedRow.setAlignment(Pos.CENTER_LEFT);
         CheckBox timedGrab = new CheckBox("定时抢票");
-        Spinner<Integer> timedSpinner = new Spinner<>(0, 23, 5);
-        timedSpinner.setPrefWidth(70);
-        HBox timedRow = new HBox(4);
-        timedRow.getChildren().addAll(timedGrab, new Label("05:00:00"));
+        timedGrab.getStyleClass().add("setting-checkbox");
+        timedGrab.setTooltip(new Tooltip("设定某个时间，到点开始刷票\n【设置完毕，需要点击开始抢票】"));
+        Spinner<Integer> hourSpinner = new Spinner<>(0, 23, 8);
+        hourSpinner.setPrefWidth(75);
+        Spinner<Integer> minSpinner = new Spinner<>(0, 59, 51);
+        minSpinner.setPrefWidth(75);
+        Spinner<Integer> secSpinner = new Spinner<>(0, 59, 5);
+        secSpinner.setPrefWidth(75);
+        timedRow.getChildren().addAll(timedGrab, hourSpinner, new Label(":"), minSpinner, new Label(":"), secSpinner);
 
+        // 修改间隔
+        HBox intervalRow = new HBox(6);
+        intervalRow.setAlignment(Pos.CENTER_LEFT);
         CheckBox modifyInterval = new CheckBox("修改间隔");
+        modifyInterval.getStyleClass().add("setting-checkbox");
+        modifyInterval.setTooltip(new Tooltip("依据设备的承受能力和封ip的可能性\n长时间[捡漏抢票]建议用默认，不勾选\n短时间[整点预售]整点十几秒内，最低间隔\n普通用户最低一秒，赞助用户最低100毫秒\n请勿长时间低间隔，否则可能很容易被封IP"));
         Spinner<Integer> intervalSpinner = new Spinner<>(100, 99999, 1000);
-        intervalSpinner.setPrefWidth(70);
-        HBox intervalRow = new HBox(4);
-        intervalRow.getChildren().addAll(modifyInterval, new Label("1000"));
+        intervalSpinner.setPrefWidth(110);
+        intervalRow.getChildren().addAll(modifyInterval, intervalSpinner);
 
         CheckBox delayClose = new CheckBox("延迟关闭 [修改间隔] 选项");
-        CheckBox nationalCDN = new CheckBox("全国CDN 可用: 348");
+        delayClose.getStyleClass().add("setting-checkbox");
+        delayClose.setTooltip(new Tooltip("这个选项启用时，自动在抢票十秒后关闭间隔\n一般用在定时抢预售票时，搭配最低间隔使用\n防止长时间低间隔被封IP，这个选项默认打开\n如果非要长时间低间隔，可以慎重关闭此选项"));
+        CheckBox nationalCDN = new CheckBox("全国CDN 可用: 308");
+        nationalCDN.getStyleClass().add("setting-checkbox");
         nationalCDN.setSelected(true);
+        nationalCDN.setTooltip(new Tooltip("拉取所有的12306服务器IP，智能测速之后\n每次查询使用随机的IP，减少缓存也增加抢票成功率\n如某些杀毒软件提示，请添加信任，否则无法使用本功能"));
         CheckBox noSubmitWhenNoTicket = new CheckBox("实时余票无座时,不提交");
+        noSubmitWhenNoTicket.getStyleClass().add("setting-checkbox");
+        noSubmitWhenNoTicket.setTooltip(new Tooltip("勾选上是12306返回是无座的时候不要，返回二等座/硬座最后系统强制分配的无座，这就没办法了。\n无座是12306分配的，提交的时候都是二等座/硬座，但最后12306的最终强制分配是无法决定的。\n勾选上，能避免80%的强制分配，【仍不能完全保证】，这个可以咨询下12306，关于强制分配无座。"));
         CheckBox partialSubmit = new CheckBox("余票不足乘客时,部分提交");
+        partialSubmit.getStyleClass().add("setting-checkbox");
+        partialSubmit.setTooltip(new Tooltip("比如有3个乘客，刷出两张票的时候，\n勾选此功能则提交前两位乘客\n乘客列表中右键，可以调整联系人排序"));
 
-        Button startGrabBtn = new Button("开始抢票");
-        startGrabBtn.getStyleClass().add("btn-start-grab");
-        startGrabBtn.setPrefWidth(120);
-        startGrabBtn.setPrefHeight(36);
-
-        box.getChildren().addAll(timedRow, intervalRow, delayClose, nationalCDN, noSubmitWhenNoTicket, partialSubmit, startGrabBtn);
+        box.getChildren().addAll(timedRow, intervalRow, delayClose, nationalCDN,
+                noSubmitWhenNoTicket, partialSubmit);
         return box;
+    }
+
+    // ==================== 其他设置内容 ====================
+
+    private VBox createOtherSettings() {
+        VBox box = new VBox(6);
+        box.setPadding(new Insets(8));
+
+        // 统一 CheckBox 宽度，确保 Spinner 对齐
+        double checkBoxWidth = 90;
+
+        // 小黑屋
+        HBox blackRoomRow = new HBox(6);
+        blackRoomRow.setAlignment(Pos.CENTER_LEFT);
+        CheckBox blackRoom = new CheckBox("小黑屋");
+        blackRoom.getStyleClass().add("setting-checkbox");
+        blackRoom.setMinWidth(checkBoxWidth);
+        blackRoom.setMaxWidth(checkBoxWidth);
+        Spinner<Integer> blackRoomSpinner = new Spinner<>(10, 999, 120);
+        blackRoomSpinner.setPrefWidth(95);
+        blackRoomSpinner.setEditable(true);
+        Label blackRoomUnit = new Label("秒/次");
+        blackRoomRow.getChildren().addAll(blackRoom, blackRoomSpinner, blackRoomUnit);
+        Tooltip blackRoomTip = new Tooltip("温馨提示：\n12306的余票并不是实时的，显示有票实则已经无票了\n这就是缓存机制，避免过多的请求真实的数据而造成拥堵\n所以小黑屋的功能就是当遇到缓存的时候，停留一段时间提交\n以免耽误其他车次的提交，或者被封账号。\n当然，有些时候缓存也能抢到票，所以请慎重抉择。\n候补和抢票是两个黑屋，是有区分的，互不影响。");
+        blackRoomTip.setWrapText(true);
+        blackRoomTip.setMaxWidth(400);
+        Tooltip.install(blackRoom, blackRoomTip);
+
+        // 屏蔽临近
+        CheckBox shieldNear = new CheckBox("屏蔽临近");
+        shieldNear.getStyleClass().add("setting-checkbox");
+        shieldNear.setMinWidth(checkBoxWidth);
+        shieldNear.setMaxWidth(checkBoxWidth);
+        Spinner<Integer> shieldNearSpinner = new Spinner<>(10, 720, 30);
+        shieldNearSpinner.setPrefWidth(95);
+        shieldNearSpinner.setEditable(true);
+        Label shieldNearUnit = new Label("分钟的车");
+        HBox shieldNearRow = new HBox(6);
+        shieldNearRow.setAlignment(Pos.CENTER_LEFT);
+        shieldNearRow.getChildren().addAll(shieldNear, shieldNearSpinner, shieldNearUnit);
+        Tooltip shieldNearTip = new Tooltip("温馨提示：\n12306有时会放出距离发车时间只有10分钟的车，考虑到需要赶赴火车站，可能来不及赶上。\n所以此功能可以设置一个您足够去到达火车站的时间，不足您设置时间的列车会自动屏蔽。\n只有当天的列车才生效，最长可设置720分钟(12小时)，最短10分钟，请根据自己的情况设置。");
+        shieldNearTip.setWrapText(true);
+        shieldNearTip.setMaxWidth(400);
+        Tooltip.install(shieldNear, shieldNearTip);
+
+        // 动车不要卧铺
+        CheckBox noSleeper = new CheckBox("动车不要卧铺 (一/二等卧)");
+        noSleeper.getStyleClass().add("setting-checkbox");
+        Tooltip noSleeperTip = new Tooltip("温馨提示：\n动车二等卧与硬卧在12306查询时归为一类，软件默认勾选硬卧时包含二等卧。这在一般车次没问题，\n但某些混合编组列车即有二等座也有二等卧，用户只想要普速硬卧和动车二等座，却误抢动车二等卧。\n此选项勾选后，即使勾选了软卧/硬卧，也不再提交动车一等卧/二等卧，确保只抢普速硬卧或二等座。");
+        noSleeperTip.setWrapText(true);
+        noSleeperTip.setMaxWidth(400);
+        Tooltip.install(noSleeper, noSleeperTip);
+
+        box.getChildren().addAll(blackRoomRow, shieldNearRow, noSleeper);
+        return box;
+    }
+
+    /**
+     * 开始抢票按钮点击事件
+     */
+    private void onStartGrab() {
+        logger.info("点击开始抢票");
+        // TODO: 实现抢票逻辑
     }
 
     // ==================== 底部状态栏 ====================
@@ -1081,6 +1949,288 @@ public class MainStage extends Stage {
         return content;
     }
 
+    // ==================== 邮件通知设置 ====================
+
+    private VBox createEmailSettings() {
+        VBox root = new VBox(6);
+        root.setPadding(new Insets(8));
+
+        // 线框标题：邮箱设置
+        TitledPane emailBorder = new TitledPane();
+        emailBorder.setText("邮箱设置");
+        emailBorder.setCollapsible(false);
+        emailBorder.getStyleClass().add("settings-titled-pane");
+
+        VBox emailContent = new VBox(8);
+        emailContent.setPadding(new Insets(8));
+
+        // 统一控件高度（用 inline style 覆盖全局 CSS padding: 10 14，inline style 优先级最高）
+        String compactStyle = "-fx-padding: 3 6; -fx-pref-height: 26; -fx-max-height: 26;";
+        // 统一右侧列宽度（服务器下拉、收件人输入框、测试发送按钮一致）
+        double rightColWidth = 180;
+        // 统一左侧输入框宽度
+        double leftInputWidth = 180;
+
+        // 发件人 + 服务器
+        HBox row1 = new HBox(6);
+        row1.setAlignment(Pos.CENTER_LEFT);
+        Label senderLabel = new Label("发件人:");
+        senderLabel.setMinWidth(55);
+        TextField senderField = new TextField();
+        senderField.setPrefWidth(leftInputWidth);
+        senderField.setStyle(compactStyle);
+        senderField.setPromptText("发件人邮箱");
+        Region row1Spacer = new Region();
+        HBox.setHgrow(row1Spacer, Priority.ALWAYS);
+        Label serverLabel = new Label("服务器:");
+        serverLabel.setMinWidth(55);
+        ComboBox<String> serverCombo = new ComboBox<>();
+        serverCombo.getItems().addAll("smtp.126.com", "smtp.163.com", "smtp.qq.com", "smtp.gmail.com", "smtp.sina.com");
+        serverCombo.setValue("smtp.126.com");
+        serverCombo.setPrefWidth(rightColWidth);
+        serverCombo.setPrefHeight(26);
+        serverCombo.setMaxHeight(26);
+        row1.getChildren().addAll(senderLabel, senderField, row1Spacer, serverLabel, serverCombo);
+
+        // 密码 + 收件人
+        HBox row2 = new HBox(6);
+        row2.setAlignment(Pos.CENTER_LEFT);
+        Label pwdLabel = new Label("密  码:");
+        pwdLabel.setMinWidth(55);
+        PasswordField pwdField = new PasswordField();
+        pwdField.setPrefWidth(leftInputWidth);
+        pwdField.setStyle(compactStyle);
+        pwdField.setPromptText("邮箱密码/授权码");
+        Region row2Spacer = new Region();
+        HBox.setHgrow(row2Spacer, Priority.ALWAYS);
+        Label receiverLabel = new Label("收件人:");
+        receiverLabel.setMinWidth(55);
+        TextField receiverField = new TextField();
+        receiverField.setPrefWidth(rightColWidth);
+        receiverField.setStyle(compactStyle);
+        receiverField.setPromptText("收件人邮箱");
+        row2.getChildren().addAll(pwdLabel, pwdField, row2Spacer, receiverLabel, receiverField);
+
+        // 选项 + 测试发送
+        HBox row3 = new HBox(6);
+        row3.setAlignment(Pos.CENTER_LEFT);
+        Label optionLabel = new Label("选  项:");
+        optionLabel.setMinWidth(55);
+        CheckBox sslCheck = new CheckBox("使用SSL加密");
+        TextField portField = new TextField("465");
+        portField.setPrefWidth(80);
+        portField.setMinWidth(80);
+        portField.setStyle(compactStyle);
+        portField.setPromptText("端口");
+        Region row3Spacer = new Region();
+        HBox.setHgrow(row3Spacer, Priority.ALWAYS);
+        Button testSendBtn = new Button("测试发送");
+        testSendBtn.setPrefWidth(rightColWidth);
+        testSendBtn.setMinWidth(rightColWidth);
+        testSendBtn.setStyle(compactStyle);
+        testSendBtn.getStyleClass().add("setting-btn");
+        row3.getChildren().addAll(optionLabel, sslCheck, portField, row3Spacer, testSendBtn);
+
+        // 底部说明文字
+        VBox descBox = new VBox(2);
+        String[] descLines = {
+            "1.发件人和收件人均为带@的全名称，发件人和收件人最好为同一个账号",
+            "2.多个收件人请用英文符号；分隔。例如：xx@139.com;ss@163.com",
+            "3.移动139、联通186、电信189等运营商邮箱可设置免费短信提醒",
+            "4.发送失败请检查用户名密码、25端口是否被禁用、邮箱已开启POP3功能"
+        };
+        for (String line : descLines) {
+            Label descLabel = new Label(line);
+            descLabel.getStyleClass().add("settings-desc-label");
+            descBox.getChildren().add(descLabel);
+        }
+
+        emailContent.getChildren().addAll(row1, row2, row3, descBox);
+        emailBorder.setContent(emailContent);
+        root.getChildren().add(emailBorder);
+
+        return root;
+    }
+
+    // ==================== 微信通知设置 ====================
+
+    private VBox createWechatSettings() {
+        VBox root = new VBox(6);
+        root.setPadding(new Insets(8));
+
+        // 线框标题：微信设置
+        TitledPane wechatBorder = new TitledPane();
+        wechatBorder.setText("微信设置");
+        wechatBorder.setCollapsible(false);
+        wechatBorder.getStyleClass().add("settings-titled-pane");
+
+        VBox wechatContent = new VBox(8);
+        wechatContent.setPadding(new Insets(8));
+
+        // 主体：左侧二维码 + 右侧操作区
+        HBox mainRow = new HBox(16);
+        mainRow.setAlignment(Pos.TOP_LEFT);
+
+        // -- 左侧：二维码占位区域 --
+        VBox qrBox = new VBox(4);
+        qrBox.setAlignment(Pos.CENTER);
+        qrBox.setMinWidth(160);
+        qrBox.setMinHeight(160);
+        qrBox.setMaxWidth(160);
+        qrBox.setMaxHeight(160);
+        qrBox.getStyleClass().add("qr-placeholder");
+        Label qrPlaceholder = new Label("公众号二维码\n（待审核）");
+        qrPlaceholder.setAlignment(Pos.CENTER);
+        qrPlaceholder.getStyleClass().add("qr-placeholder-text");
+        qrBox.getChildren().add(qrPlaceholder);
+
+        // -- 右侧：绑定状态 + 按钮 + 说明 --
+        VBox rightCol = new VBox(8);
+
+        // 绑定状态
+        HBox statusRow = new HBox(6);
+        statusRow.setAlignment(Pos.CENTER_LEFT);
+        Label statusLabel = new Label("绑定状态:");
+        statusLabel.setMinWidth(70);
+        Label statusValue = new Label("未绑定");
+        statusValue.getStyleClass().add("wechat-status");
+        statusRow.getChildren().addAll(statusLabel, statusValue);
+
+        // 4个按钮 2x2 排列
+        HBox btnRow1 = new HBox(8);
+        btnRow1.setAlignment(Pos.CENTER_LEFT);
+        Button loadQrBtn = new Button("加载二维码");
+        loadQrBtn.setPrefWidth(120);
+        loadQrBtn.getStyleClass().add("setting-btn");
+        Button checkBindBtn = new Button("检查绑定");
+        checkBindBtn.setPrefWidth(120);
+        checkBindBtn.getStyleClass().add("setting-btn");
+        btnRow1.getChildren().addAll(loadQrBtn, checkBindBtn);
+
+        HBox btnRow2 = new HBox(8);
+        btnRow2.setAlignment(Pos.CENTER_LEFT);
+        Button changeBindBtn = new Button("更换绑定");
+        changeBindBtn.setPrefWidth(120);
+        changeBindBtn.getStyleClass().add("setting-btn");
+        Button testBtn = new Button("测试");
+        testBtn.setPrefWidth(120);
+        testBtn.getStyleClass().add("setting-btn");
+        btnRow2.getChildren().addAll(changeBindBtn, testBtn);
+
+        // 初次使用说明
+        VBox descBox = new VBox(2);
+        Label descTitle = new Label("初次使用");
+        descTitle.getStyleClass().add("settings-desc-title");
+        String[] descLines = {
+            "1.加载二维码，手机扫描二维码并关注",
+            "2.点击检查绑定，检查是否已成功绑定",
+            "完成绑定后，自动启用，请勿取消关注"
+        };
+        descBox.getChildren().add(descTitle);
+        for (String line : descLines) {
+            Label descLabel = new Label(line);
+            descLabel.getStyleClass().add("settings-desc-label");
+            descBox.getChildren().add(descLabel);
+        }
+
+        rightCol.getChildren().addAll(statusRow, btnRow1, btnRow2, descBox);
+        mainRow.getChildren().addAll(qrBox, rightCol);
+        wechatContent.getChildren().add(mainRow);
+        wechatBorder.setContent(wechatContent);
+        root.getChildren().add(wechatBorder);
+
+        return root;
+    }
+
+    // ==================== 自动支付设置 ====================
+
+    private VBox createAutoPaySettings() {
+        VBox root = new VBox(6);
+        root.setPadding(new Insets(8));
+
+        // 线框标题：支付设置（用 TitledPane 实现带标题的线框）
+        TitledPane payBorder = new TitledPane();
+        payBorder.setText("支付设置");
+        payBorder.setCollapsible(false);
+        payBorder.getStyleClass().add("settings-titled-pane");
+
+        VBox payContent = new VBox(8);
+        payContent.setPadding(new Insets(8));
+
+        // 主体：左侧输入 + 右侧勾选（两列）
+        HBox mainRow = new HBox(16);
+        mainRow.setAlignment(Pos.TOP_LEFT);
+
+        // -- 左侧：支付宝账号 + 支付密码 --
+        VBox leftCol = new VBox(8);
+        leftCol.setMinWidth(180);
+
+        HBox accountRow = new HBox(6);
+        accountRow.setAlignment(Pos.CENTER_LEFT);
+        Label accountLabel = new Label("支付宝账号:");
+        accountLabel.setMinWidth(75);
+        TextField accountField = new TextField();
+        accountField.setPrefWidth(130);
+        accountField.setPromptText("支付宝账号");
+        accountRow.getChildren().addAll(accountLabel, accountField);
+
+        HBox passwordRow = new HBox(6);
+        passwordRow.setAlignment(Pos.CENTER_LEFT);
+        Label passwordLabel = new Label("支付密码:");
+        passwordLabel.setMinWidth(75);
+        PasswordField passwordField = new PasswordField();
+        passwordField.setPrefWidth(130);
+        passwordField.setPromptText("支付密码");
+        passwordRow.getChildren().addAll(passwordLabel, passwordField);
+
+        leftCol.getChildren().addAll(accountRow, passwordRow);
+
+        // -- 右侧：勾选框（2列排列） --
+        VBox rightCol = new VBox(4);
+
+        CheckBox autoPayCheck = new CheckBox("抢到票自动支付");
+        autoPayCheck.setTooltip(new Tooltip("如果勾选了此功能，抢到票或者抢到候补会尝试自动支付。\n如果支付失败，订单依然是未支付状态，就需要手动支付。\n如果支付成功，订单就是已支付状态，可以去核对一下。\n建议开启这个功能后，也要设置一些通知，以免支付失败。\n请在抢票之前勾选，已经抢到票了，再次勾选不会起作用。"));
+
+        CheckBox payUnpaidCheck = new CheckBox("支付未付款订单");
+        CheckBox noSeatNoPayCheck = new CheckBox("无座不支付");
+        CheckBox showPayWindowCheck = new CheckBox("显示支付的窗口");
+        CheckBox rememberCheck = new CheckBox("记住勾选");
+        rememberCheck.setTooltip(new Tooltip("是否记住自动支付的相关勾选，就是保存配置的意思，重启软件不影响。\n请注意，一旦保存了配置，请留意自动支付是否勾选，以免测试时支付。"));
+
+        // 勾选框排列（参照 Bypass 布局）
+        HBox checkRow1 = new HBox(12);
+        checkRow1.getChildren().addAll(autoPayCheck);
+        HBox checkRow2 = new HBox(12);
+        checkRow2.getChildren().addAll(payUnpaidCheck, noSeatNoPayCheck);
+        HBox checkRow3 = new HBox(12);
+        checkRow3.getChildren().addAll(showPayWindowCheck, rememberCheck);
+
+        rightCol.getChildren().addAll(checkRow1, checkRow2, checkRow3);
+
+        mainRow.getChildren().addAll(leftCol, rightCol);
+
+        // 底部说明文字
+        VBox descBox = new VBox(2);
+        String[] descLines = {
+            "1.主要解决，抢到票时通知不到而错过付款，候补是按付款时间计算的。",
+            "2.支持余额、余额宝、花呗、银行卡，按支付宝支付顺序依次尝试支付。",
+            "3.不是登录密码，是六位数字的支付密码，为了安全只在本机加密使用。",
+            "4.支付全程都在本机执行，受支付宝风控保护，建议提前进行支付测试。",
+            "5.收款方为铁路，不会经过分流，如有订单的问题，请咨询12306客服。"
+        };
+        for (String line : descLines) {
+            Label descLabel = new Label(line);
+            descLabel.getStyleClass().add("settings-desc-label");
+            descBox.getChildren().add(descLabel);
+        }
+
+        payContent.getChildren().addAll(mainRow, descBox);
+        payBorder.setContent(payContent);
+        root.getChildren().add(payBorder);
+
+        return root;
+    }
+
     private Label createPlaceholderContent(String text) {
         Label label = new Label(text);
         label.setPadding(new Insets(20));
@@ -1097,13 +2247,494 @@ public class MainStage extends Stage {
         logger.info("设置区域：{}", settingsVisible ? "展开" : "折叠");
     }
 
+    /**
+     * 打开日志文件所在的 Windows 文件夹
+     */
+    private void openLogDirectory() {
+        File logDir = new File("logs");
+        if (!logDir.exists()) {
+            logDir.mkdirs();
+        }
+        try {
+            Desktop.getDesktop().open(logDir);
+        } catch (Exception ex) {
+            logger.error("打开日志目录失败：{}", ex.getMessage());
+        }
+    }
+
+    /**
+     * 按账号初始化独立日志文件
+     * 移除 logback.xml 中的默认 FILE appender，替换为账号专属的滚动日志文件
+     * 未登录时使用 tickethelper.log，已登录时使用 tickethelper-{username}.log
+     */
+    private void initAccountLogFile() {
+        String accountName = (currentUser != null && currentUser.getUsername() != null)
+                ? currentUser.getUsername() : "default";
+        String logFileName = "logs/tickethelper-" + accountName + ".log";
+        String logPattern = "logs/tickethelper-" + accountName + ".%d{yyyy-MM-dd}.log";
+
+        LoggerContext loggerContext = (LoggerContext) LoggerFactory.getILoggerFactory();
+        ch.qos.logback.classic.Logger rootLogger = loggerContext.getLogger(ch.qos.logback.classic.Logger.ROOT_LOGGER_NAME);
+
+        // 移除旧的 FILE appender（来自 logback.xml）
+        rootLogger.detachAppender("FILE");
+
+        // 创建账号专属的滚动文件 appender
+        RollingFileAppender<ch.qos.logback.classic.spi.ILoggingEvent> fileAppender = new RollingFileAppender<>();
+        fileAppender.setName("FILE-" + accountName);
+        fileAppender.setFile(logFileName);
+
+        TimeBasedRollingPolicy<ch.qos.logback.classic.spi.ILoggingEvent> rollingPolicy = new TimeBasedRollingPolicy<>();
+        rollingPolicy.setFileNamePattern(logPattern);
+        rollingPolicy.setMaxHistory(7);
+        rollingPolicy.setParent(fileAppender);
+        rollingPolicy.setContext(loggerContext);
+        rollingPolicy.start();
+        fileAppender.setRollingPolicy(rollingPolicy);
+
+        PatternLayoutEncoder encoder = new PatternLayoutEncoder();
+        encoder.setPattern("%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n");
+        encoder.setCharset(java.nio.charset.StandardCharsets.UTF_8);
+        encoder.setContext(loggerContext);
+        encoder.start();
+        fileAppender.setEncoder(encoder);
+
+        fileAppender.setContext(loggerContext);
+        fileAppender.start();
+
+        rootLogger.addAppender(fileAppender);
+
+        // 记录当前日志文件引用，供实时读取使用
+        currentLogFile = new File(logFileName);
+        logPointer = 0;
+
+        logger.info("已初始化账号日志文件：{}", logFileName);
+    }
+
+    /**
+     * 启动日志文件实时读取（类似 tail -f）
+     * 每 500ms 轮询一次日志文件的新内容，显示在输出区
+     * 格式：HH:mm:ss.SSS 日志内容（蓝色）
+     * 最多保留 MAX_LOG_LINES 行，超出后移除最老的
+     */
+    private void startLogTailing() {
+        if (currentLogFile == null) return;
+
+        // 如果文件已存在，从末尾开始读（只显示新日志）
+        if (currentLogFile.exists()) {
+            logPointer = currentLogFile.length();
+        }
+
+        logTailTimeline = new Timeline(new javafx.animation.KeyFrame(javafx.util.Duration.millis(500), e -> pollLogFile()));
+        logTailTimeline.setCycleCount(Timeline.INDEFINITE);
+        logTailTimeline.play();
+    }
+
+    /**
+     * 轮询日志文件，读取新增内容并显示到输出区
+     */
+    private void pollLogFile() {
+        if (currentLogFile == null || !currentLogFile.exists()) return;
+
+        long fileLength = currentLogFile.length();
+        // 文件被滚动重建后（长度变小），重置指针
+        if (fileLength < logPointer) {
+            logPointer = 0;
+        }
+        if (fileLength == logPointer) return;
+
+        try (RandomAccessFile raf = new RandomAccessFile(currentLogFile, "r")) {
+            raf.seek(logPointer);
+            byte[] buffer = new byte[(int) (fileLength - logPointer)];
+            raf.readFully(buffer);
+            logPointer = fileLength;
+
+            String newContent = new String(buffer, java.nio.charset.StandardCharsets.UTF_8);
+            String[] lines = newContent.split("\n", -1);
+
+            for (String line : lines) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty()) continue;
+
+                // 解析 logback 格式：2026-06-17 14:39:53.287 [main] INFO  ... - 消息内容
+                String displayLine = parseLogLine(trimmed);
+                if (displayLine != null) {
+                    Text text = new Text(displayLine + "\n");
+                    text.setFill(javafx.scene.paint.Color.BLUE);
+                    logArea.getChildren().add(text);
+                }
+            }
+
+            // 超过最大行数，移除最老的
+            while (logArea.getChildren().size() > MAX_LOG_LINES) {
+                logArea.getChildren().remove(0);
+            }
+
+            // 自动滚动到底部（仅当用户已在底部附近时）
+            if (logScrollPane.getVvalue() > 0.95) {
+                logScrollPane.setVvalue(1.0);
+            }
+        } catch (Exception ex) {
+            // 文件被占用或读取异常，静默跳过
+        }
+    }
+
+    /**
+     * 解析 logback 日志行，提取时间+消息
+     * 输入：2026-06-17 14:39:53.287 [main] INFO  c.j.j.t.MainStage - 已初始化账号日志文件
+     * 输出：14:39:53.287 已初始化账号日志文件
+     */
+    private String parseLogLine(String line) {
+        // 匹配：yyyy-MM-dd HH:mm:ss.SSS [thread] LEVEL  logger - msg
+        if (line.length() < 23) return null;
+        // 时间部分："14:39:53.287"
+        String timePart = line.substring(11, 23);
+        // 提取日志级别：在 "] " 之后，%-5level 占5字符
+        int bracketEnd = line.indexOf("] ");
+        if (bracketEnd < 0) return null;
+        String level = line.substring(bracketEnd + 2, Math.min(bracketEnd + 7, line.length())).trim();
+        // 只显示 INFO 级别
+        if (!"INFO".equals(level)) return null;
+        // 查找 " - " 分隔符后的消息内容
+        int msgStart = line.indexOf(" - ");
+        if (msgStart < 0) return null;
+        String message = line.substring(msgStart + 3).trim();
+        if (message.isEmpty()) return null;
+        return timePart + "  " + message;
+    }
+
+    /**
+     * 保存车站搜索历史（分账户）
+     * 查询车票时自动调用，将出发站和到达站保存到历史
+     */
+    private void saveStationHistory(String fromStation, String toStation) {
+        if (currentAccountConfig == null) return;
+        currentAccountConfig.addDepartureHistory(fromStation);
+        currentAccountConfig.addArrivalHistory(toStation);
+        // 更新输入框的历史列表
+        fromStationField.setHistoryItems(currentAccountConfig.getDepartureHistory());
+        toStationField.setHistoryItems(currentAccountConfig.getArrivalHistory());
+    }
+
+    // ==================== 分账户配置 ====================
+
+    /**
+     * 初始化分账户配置
+     * 根据当前登录用户加载独立的配置（音量、车站历史等）
+     */
+    private void initAccountConfig() {
+        if (currentUser != null && currentUser.getUsername() != null) {
+            currentAccountConfig = AccountConfig.get(currentUser.getUsername());
+            logger.info("已加载账户配置：user={}", currentUser.getUsername());
+        } else {
+            // 未登录时使用全局默认配置
+            currentAccountConfig = null;
+            logger.info("未登录，使用全局默认配置");
+        }
+    }
+
+    /**
+     * 初始化车站搜索历史（分账户）
+     * 将历史数据注入到输入框，并设置选中回调以保存新选择
+     */
+    private void initStationHistory() {
+        if (currentAccountConfig == null) {
+            // 未登录时，使用空历史
+            fromStationField.setHistoryItems(java.util.Collections.emptyList());
+            toStationField.setHistoryItems(java.util.Collections.emptyList());
+            return;
+        }
+
+        // 注入出发站历史
+        fromStationField.setHistoryItems(currentAccountConfig.getDepartureHistory());
+        fromStationField.setOnHistorySelected(station -> {
+            currentAccountConfig.addDepartureHistory(station);
+            // 更新列表（去重置顶后）
+            fromStationField.setHistoryItems(currentAccountConfig.getDepartureHistory());
+            return null;
+        });
+
+        // 注入到达站历史
+        toStationField.setHistoryItems(currentAccountConfig.getArrivalHistory());
+        toStationField.setOnHistorySelected(station -> {
+            currentAccountConfig.addArrivalHistory(station);
+            toStationField.setHistoryItems(currentAccountConfig.getArrivalHistory());
+            return null;
+        });
+
+        logger.info("已加载车站历史：出发{}条，到达{}条",
+                currentAccountConfig.getDepartureHistory().size(),
+                currentAccountConfig.getArrivalHistory().size());
+    }
+
+    // ==================== 同城车站筛选 ====================
+
+    /**
+     * 创建同城车站筛选按钮（蓝色向下箭头）
+     */
+    private Button createCityFilterButton(String tooltipText) {
+        Button btn = new Button("\u2193"); // 向下箭头
+        btn.setPrefWidth(24);
+        btn.setPrefHeight(28);
+        btn.getStyleClass().add("btn-city-filter");
+        btn.setCursor(javafx.scene.Cursor.HAND);
+        Tooltip tooltip = new Tooltip("温馨提示：\n" + tooltipText);
+        tooltip.setWrapText(true);
+        tooltip.setPrefWidth(220);
+        Tooltip.install(btn, tooltip);
+        return btn;
+    }
+
+    /**
+     * 更新同城筛选按钮的视觉状态（有筛选时高亮）
+     */
+    private void updateCityFilterButtonState(Button btn, String stationName, Map<String, java.util.Set<String>> filters) {
+        if (stationName == null || stationName.trim().isEmpty()) {
+            btn.getStyleClass().remove("btn-city-filter-active");
+            return;
+        }
+        String cityCode = StationUtil.findStationCityCode(stationName.trim());
+        if (cityCode != null && !cityCode.isEmpty() && filters.containsKey(cityCode) && !filters.get(cityCode).isEmpty()) {
+            if (!btn.getStyleClass().contains("btn-city-filter-active")) {
+                btn.getStyleClass().add("btn-city-filter-active");
+            }
+        } else {
+            btn.getStyleClass().remove("btn-city-filter-active");
+        }
+    }
+
+    /**
+     * 显示同城车站筛选弹出窗口
+     */
+    private void showCityStationPopup(StationAutoCompleteField stationField, Button anchorBtn,
+                                       Popup existingPopup, Map<String, java.util.Set<String>> filters, boolean isFrom) {
+        String stationName = stationField.getText();
+        if (stationName == null || stationName.trim().isEmpty()) {
+            Alert alert = new Alert(Alert.AlertType.INFORMATION);
+            alert.setTitle("提示");
+            alert.setHeaderText(null);
+            alert.setContentText("请先输入车站名称，再筛选同城车站。");
+            alert.showAndWait();
+            return;
+        }
+
+        String cityCode = StationUtil.findStationCityCode(stationName.trim());
+        List<StationUtil.Station> cityStations = StationUtil.getStationsInSameCity(stationName.trim());
+        if (cityStations.isEmpty()) {
+            Alert alert = new Alert(Alert.AlertType.INFORMATION);
+            alert.setTitle("提示");
+            alert.setHeaderText(null);
+            alert.setContentText("未找到与「" + stationName.trim() + "」同城的其他车站。");
+            alert.showAndWait();
+            return;
+        }
+
+        // 如果只有一个车站（就是当前站），也提示
+        if (cityStations.size() <= 1) {
+            Alert alert = new Alert(Alert.AlertType.INFORMATION);
+            alert.setTitle("提示");
+            alert.setHeaderText(null);
+            alert.setContentText("「" + stationName.trim() + "」没有同城其他车站。");
+            alert.showAndWait();
+            return;
+        }
+
+        // 隐藏已有弹出窗口
+        if (existingPopup != null && existingPopup.isShowing()) {
+            existingPopup.hide();
+        }
+
+        // 创建弹出窗口内容
+        VBox popupContent = new VBox(4);
+        popupContent.setPadding(new Insets(6, 8, 6, 8));
+        popupContent.setStyle("-fx-background-color: white; -fx-border-color: #b0b0b0; -fx-border-radius: 4; -fx-background-radius: 4;");
+        popupContent.setPrefWidth(140);
+
+        // 获取当前城市的已选车站
+        java.util.Set<String> selectedStations = filters.computeIfAbsent(cityCode, k -> new java.util.HashSet<>());
+        // 默认全选
+        if (selectedStations.isEmpty()) {
+            for (StationUtil.Station s : cityStations) {
+                selectedStations.add(s.getName());
+            }
+        }
+
+        List<CheckBox> checkBoxes = new ArrayList<>();
+        for (StationUtil.Station s : cityStations) {
+            CheckBox cb = new CheckBox(s.getName());
+            cb.setSelected(selectedStations.contains(s.getName()));
+            cb.setStyle("-fx-font-size: 13px;");
+            checkBoxes.add(cb);
+            popupContent.getChildren().add(cb);
+        }
+
+        Popup popup = new Popup();
+        popup.setAutoHide(true);
+        popup.getContent().add(popupContent);
+
+        // 定位到按钮正下方
+        double screenX = anchorBtn.localToScreen(0, 0).getX();
+        double screenY = anchorBtn.localToScreen(0, 0).getY() + anchorBtn.getHeight();
+        popup.show(anchorBtn, screenX, screenY);
+
+        // 保存引用以便后续关闭
+        if (isFrom) {
+            fromCityPopup = popup;
+        } else {
+            toCityPopup = popup;
+        }
+
+        // 弹出窗口关闭时保存选择
+        popup.setOnHidden(e -> {
+            java.util.Set<String> newSelected = new java.util.HashSet<>();
+            for (CheckBox cb : checkBoxes) {
+                if (cb.isSelected()) {
+                    newSelected.add(cb.getText());
+                }
+            }
+            if (newSelected.isEmpty()) {
+                filters.remove(cityCode);
+            } else {
+                filters.put(cityCode, newSelected);
+            }
+            // 保存持久化
+            saveCityFilters();
+            // 更新按钮状态
+            updateCityFilterButtonState(anchorBtn, stationField.getText(), filters);
+            // 如果有查询结果，重新应用筛选
+            if (!allTrainResults.isEmpty()) {
+                applyFilters();
+            }
+            logger.debug("同城筛选已保存：cityCode={} -> {}", cityCode, newSelected);
+        });
+    }
+
+    /**
+     * 保存同城车站筛选状态到配置文件
+     */
+    private void saveCityFilters() {
+        if (currentAccountConfig == null) return;
+        try {
+            // 保存为 JSON 格式：{"from":{"深圳":["深圳","深圳东","深圳北","福田"]},"to":{...}}
+            StringBuilder sb = new StringBuilder();
+            sb.append("{\"from\":{");
+            boolean firstFrom = true;
+            for (Map.Entry<String, java.util.Set<String>> entry : fromCityFilters.entrySet()) {
+                if (!firstFrom) sb.append(",");
+                sb.append("\"").append(entry.getKey()).append("\":");
+                sb.append("[");
+                boolean first = true;
+                for (String s : entry.getValue()) {
+                    if (!first) sb.append(",");
+                    sb.append("\"").append(s).append("\"");
+                    first = false;
+                }
+                sb.append("]");
+                firstFrom = false;
+            }
+            sb.append("},\"to\":{");
+            boolean firstTo = true;
+            for (Map.Entry<String, java.util.Set<String>> entry : toCityFilters.entrySet()) {
+                if (!firstTo) sb.append(",");
+                sb.append("\"").append(entry.getKey()).append("\":");
+                sb.append("[");
+                boolean first = true;
+                for (String s : entry.getValue()) {
+                    if (!first) sb.append(",");
+                    sb.append("\"").append(s).append("\"");
+                    first = false;
+                }
+                sb.append("]");
+                firstTo = false;
+            }
+            sb.append("}}");
+            currentAccountConfig.setCityFilter(sb.toString());
+        } catch (Exception e) {
+            logger.warn("保存同城筛选状态失败", e);
+        }
+    }
+
+    /**
+     * 加载同城车站筛选状态
+     */
+    private void loadCityFilters() {
+        if (currentAccountConfig == null) return;
+        String json = currentAccountConfig.getCityFilter();
+        if (json == null || json.isEmpty()) return;
+        try {
+            // 简单解析 JSON（不引入额外依赖）
+            fromCityFilters.clear();
+            toCityFilters.clear();
+            parseCityFilterJson(json, "from", fromCityFilters);
+            parseCityFilterJson(json, "to", toCityFilters);
+            // 更新按钮状态
+            updateCityFilterButtonState(fromCityBtn, fromStationField.getText(), fromCityFilters);
+            updateCityFilterButtonState(toCityBtn, toStationField.getText(), toCityFilters);
+            logger.info("已加载同城筛选状态");
+        } catch (Exception e) {
+            logger.warn("加载同城筛选状态失败", e);
+        }
+    }
+
+    /**
+     * 简单解析同城筛选 JSON
+     */
+    private void parseCityFilterJson(String json, String key, Map<String, java.util.Set<String>> target) {
+        String fromKey = "\"" + key + "\":{";
+        int start = json.indexOf(fromKey);
+        if (start < 0) return;
+        start += fromKey.length();
+        int end = json.indexOf("}", start);
+        if (end < 0) return;
+        String content = json.substring(start, end);
+        // 解析每个城市
+        String[] cityEntries = content.split("},\"");
+        for (String entry : cityEntries) {
+            entry = entry.replace("}", "").trim();
+            if (entry.isEmpty()) continue;
+            int colonIdx = entry.indexOf(":[");
+            if (colonIdx < 0) continue;
+            String city = entry.substring(0, colonIdx).replace("\"", "").trim();
+            String stationsStr = entry.substring(colonIdx + 2);
+            if (stationsStr.endsWith("]")) stationsStr = stationsStr.substring(0, stationsStr.length() - 1);
+            java.util.Set<String> stations = new java.util.HashSet<>();
+            for (String s : stationsStr.split(",")) {
+                s = s.replace("\"", "").trim();
+                if (!s.isEmpty()) stations.add(s);
+            }
+            if (!stations.isEmpty()) {
+                target.put(city, stations);
+            }
+        }
+    }
+
+    /**
+     * 获取当前账户的声音开关状态（优先用账户配置，回退到全局配置）
+     */
+    private boolean isSoundEnabled() {
+        if (currentAccountConfig != null) {
+            return currentAccountConfig.isSoundEnabled();
+        }
+        return AppConfig.getInstance().isSoundEnabled();
+    }
+
+    /**
+     * 设置声音开关（保存到分账户配置）
+     */
+    private void setSoundEnabled(boolean enabled) {
+        if (currentAccountConfig != null) {
+            currentAccountConfig.setSoundEnabled(enabled);
+        } else {
+            AppConfig.getInstance().setSoundEnabled(enabled);
+        }
+    }
+
     // ==================== 声音开关 ====================
 
-    /** 更新音量图标（根据 AppConfig 中的声音开关状态） */
+    /** 更新音量图标（根据账户配置中的声音开关状态） */
     private void updateVolumeIcon() {
         if (volumeLabel == null) return;
-        AppConfig config = AppConfig.getInstance();
-        if (config.isSoundEnabled()) {
+        if (isSoundEnabled()) {
             // 开启状态：喇叭图标
             volumeLabel.setText("\uD83D\uDD0A");
             volumeLabel.setStyle("-fx-text-fill: #333333;");
@@ -1116,9 +2747,8 @@ public class MainStage extends Stage {
 
     /** 切换声音开关状态 */
     private void toggleSound() {
-        AppConfig config = AppConfig.getInstance();
-        boolean newState = !config.isSoundEnabled();
-        config.setSoundEnabled(newState);
+        boolean newState = !isSoundEnabled();
+        setSoundEnabled(newState);
         updateVolumeIcon();
         logger.info("声音总开关：{}", newState ? "开启" : "关闭");
     }

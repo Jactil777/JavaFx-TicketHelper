@@ -57,6 +57,9 @@ public class AppConfig {
     /** 声音总开关（默认开启） */
     private boolean soundEnabled = true;
 
+    /** 上次登录的用户名（用于启动时自动加载该账号的凭据） */
+    private String lastUsername = "";
+
     private AppConfig() {
         loadConfig();
         logger.info("AppConfig 初始化完成，当前语言：{}，声音开关：{}", currentLanguage, soundEnabled ? "开启" : "关闭");
@@ -93,9 +96,10 @@ public class AppConfig {
             props.load(in);
             this.currentLanguage = props.getProperty("language", "zh_CN");
             this.soundEnabled = Boolean.parseBoolean(props.getProperty("soundEnabled", "true"));
+            this.lastUsername = props.getProperty("lastUsername", "");
             logger.info("已加载配置文件：{}", path);
         } catch (IOException e) {
-            logger.warn("加载配置文件失败，使用默认配置", e);
+            logger.info("加载配置文件失败，使用默认配置", e);
         }
     }
 
@@ -106,10 +110,13 @@ public class AppConfig {
             Properties props = new Properties();
             props.setProperty("language", this.currentLanguage);
             props.setProperty("soundEnabled", String.valueOf(this.soundEnabled));
+            if (this.lastUsername != null && !this.lastUsername.isEmpty()) {
+                props.setProperty("lastUsername", this.lastUsername);
+            }
             try (OutputStream out = Files.newOutputStream(path)) {
                 props.store(out, "JavaFx-TicketHelper Configuration");
             }
-            logger.debug("配置已保存到：{}", path);
+            logger.info("配置已保存到：{}", path);
         } catch (IOException e) {
             logger.error("保存配置文件失败", e);
         }
@@ -160,6 +167,15 @@ public class AppConfig {
 
     public void setSoundEnabled(boolean soundEnabled) {
         this.soundEnabled = soundEnabled;
+        saveConfig();
+    }
+
+    public String getLastUsername() {
+        return lastUsername;
+    }
+
+    public void setLastUsername(String lastUsername) {
+        this.lastUsername = lastUsername != null ? lastUsername : "";
         saveConfig();
     }
 }

@@ -10,11 +10,12 @@ public interface TicketService {
     /**
      * 查询余票
      *
-     * @param fromStation 出发站
-     * @param toStation   到达站
-     * @param trainDate   乘车日期（yyyy-MM-dd）
+     * @param fromStation  出发站
+     * @param toStation    到达站
+     * @param trainDate    乘车日期（yyyy-MM-dd）
+     * @param purposeCodes 乘客类型：ADULT=成人票，0X00=学生票
      */
-    void queryTickets(String fromStation, String toStation, String trainDate);
+    void queryTickets(String fromStation, String toStation, String trainDate, String purposeCodes);
 
     /**
      * 提交抢票任务

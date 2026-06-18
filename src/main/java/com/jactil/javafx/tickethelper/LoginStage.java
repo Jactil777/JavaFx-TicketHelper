@@ -1,5 +1,7 @@
 package com.jactil.javafx.tickethelper;
 
+import com.jactil.javafx.tickethelper.config.AccountConfig;
+import com.jactil.javafx.tickethelper.config.AppConfig;
 import com.jactil.javafx.tickethelper.model.UserInfo;
 import com.jactil.javafx.tickethelper.service.LoginService;
 import com.jactil.javafx.tickethelper.service.impl.LoginServiceImpl;
@@ -51,6 +53,9 @@ public class LoginStage extends Stage {
     private boolean passwordVisible = false;
     private CheckBox rememberCheckBox;
     private static final String CREDENTIALS_FILE = System.getProperty("user.home") + "/.javafx-tickethelper/credentials.properties";
+
+    /** 当前加载的账户配置（用于分账户凭据存储） */
+    private AccountConfig currentAccountConfig;
 
     public LoginStage() {
         setTitle("JavaFx-TicketHelper - 登录");
@@ -354,29 +359,44 @@ public class LoginStage extends Stage {
     }
 
     /**
-     * 加载已保存的凭据
+     * 加载已保存的凭据（分账户）
+     * 优先从 AppConfig 获取上次登录的用户名，再加载该账户的凭据
+     * 兼容旧版：如果旧 credentials.properties 存在且 AppConfig 无 lastUsername，则迁移
      */
     private void loadSavedCredentials() {
         try {
-            Path path = Paths.get(CREDENTIALS_FILE);
-            if (Files.exists(path)) {
-                Properties props = new Properties();
-                try (InputStream is = Files.newInputStream(path)) {
-                    props.load(is);
-                }
-                String savedUser = props.getProperty("username", "");
-                String savedPass = props.getProperty("password", "");
-                boolean remember = Boolean.parseBoolean(props.getProperty("remember", "false"));
+            AppConfig appConfig = AppConfig.getInstance();
+            String lastUser = appConfig.getLastUsername();
 
-                logger.info("加载已保存凭据：user={}, remember={}", savedUser, remember);
+            // 兼容旧版：如果 lastUsername 为空，尝试从旧凭据文件加载
+            if (lastUser.isEmpty()) {
+                Path oldPath = Paths.get(CREDENTIALS_FILE);
+                if (Files.exists(oldPath)) {
+                    Properties props = new Properties();
+                    try (InputStream is = Files.newInputStream(oldPath)) {
+                        props.load(is);
+                    }
+                    String oldUser = props.getProperty("username", "");
+                    if (!oldUser.isEmpty()) {
+                        lastUser = oldUser;
+                        appConfig.setLastUsername(lastUser);
+                        logger.info("从旧凭据文件迁移用户名：{}", lastUser);
+                    }
+                }
+            }
 
-                if (!savedUser.isEmpty()) {
-                    usernameField.setText(savedUser);
+            if (!lastUser.isEmpty()) {
+                // 加载该账户的凭据
+                currentAccountConfig = AccountConfig.get(lastUser);
+                usernameField.setText(lastUser);
+                if (currentAccountConfig.isRememberPassword()) {
+                    String savedPass = currentAccountConfig.getSavedPassword();
+                    if (savedPass != null && !savedPass.isEmpty()) {
+                        passwordField.setText(savedPass);
+                    }
                 }
-                if (!savedPass.isEmpty()) {
-                    passwordField.setText(savedPass);
-                }
-                rememberCheckBox.setSelected(remember);
+                rememberCheckBox.setSelected(currentAccountConfig.isRememberPassword());
+                logger.info("已加载账户凭据：user={}, remember={}", lastUser, currentAccountConfig.isRememberPassword());
             }
         } catch (Exception e) {
             logger.warn("加载凭据失败", e);
@@ -384,28 +404,23 @@ public class LoginStage extends Stage {
     }
 
     /**
-     * 保存凭据
+     * 保存凭据（分账户存储）
      */
     private void saveCredentials(String username, String password) {
         try {
-            // 确保父目录存在
-            Path path = Paths.get(CREDENTIALS_FILE);
-            if (path.getParent() != null) {
-                Files.createDirectories(path.getParent());
-            }
+            boolean remember = rememberCheckBox.isSelected();
 
-            Properties props = new Properties();
-            if (rememberCheckBox.isSelected()) {
-                props.setProperty("username", username);
-                props.setProperty("password", password);
-                props.setProperty("remember", "true");
-                logger.info("保存凭据：user={}", username);
+            // 保存到分账户配置
+            AccountConfig accountConfig = AccountConfig.get(username);
+            accountConfig.saveCredentials(password, remember);
+
+            // 更新全局 lastUsername
+            AppConfig.getInstance().setLastUsername(username);
+
+            if (remember) {
+                logger.info("保存凭据（分账户）：user={}", username);
             } else {
-                props.setProperty("remember", "false");
-                logger.info("清除凭据（未勾选记住密码）");
-            }
-            try (OutputStream os = Files.newOutputStream(path)) {
-                props.store(os, "JavaFx-TicketHelper Credentials");
+                logger.info("清除凭据（未勾选记住密码）：user={}", username);
             }
         } catch (Exception e) {
             logger.warn("保存凭据失败", e);

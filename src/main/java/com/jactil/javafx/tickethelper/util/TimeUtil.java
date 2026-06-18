@@ -81,7 +81,7 @@ public class TimeUtil {
                 serverTime = httpDate.getTime();
             } else {
                 serverTime = localTime;
-                logger.warn("服务器未返回 Date 头，使用本地时间");
+                logger.warn("服务器未返回Date头,使用本地时间");
             }
         }
 

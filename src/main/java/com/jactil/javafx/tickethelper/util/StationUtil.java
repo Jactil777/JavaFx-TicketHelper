@@ -35,18 +35,24 @@ public class StationUtil {
         private final String name;       // 中文名，如 北京北
         private final String pinyin;     // 拼音，如 beijingbei
         private final String shortCode;  // 简码，如 bjb
+        private final String cityCode;   // 城市代码（如 0357=北京，1717=重庆）
+        private final String cityName;   // 城市名（如 北京、重庆）
 
-        public Station(String code, String name, String pinyin, String shortCode) {
+        public Station(String code, String name, String pinyin, String shortCode, String cityCode, String cityName) {
             this.code = code;
             this.name = name;
             this.pinyin = pinyin;
             this.shortCode = shortCode;
+            this.cityCode = cityCode;
+            this.cityName = cityName;
         }
 
         public String getCode() { return code; }
         public String getName() { return name; }
         public String getPinyin() { return pinyin; }
         public String getShortCode() { return shortCode; }
+        public String getCityCode() { return cityCode; }
+        public String getCityName() { return cityName; }
 
         @Override
         public String toString() { return name; }
@@ -64,6 +70,34 @@ public class StationUtil {
             }
         }
         return stations;
+    }
+
+    /**
+     * 获取与指定车站同城的所有车站（基于 cityCode 精确匹配）
+     */
+    public static List<Station> getStationsInSameCity(String stationName) {
+        if (stationName == null || stationName.trim().isEmpty()) {
+            return Collections.emptyList();
+        }
+        // 先找到目标车站的 cityCode
+        String targetCityCode = findStationCityCode(stationName.trim());
+        if (targetCityCode == null || targetCityCode.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return getAllStations().stream()
+                .filter(s -> targetCityCode.equals(s.getCityCode()))
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 根据站名查找其 cityCode
+     */
+    public static String findStationCityCode(String stationName) {
+        return getAllStations().stream()
+                .filter(s -> s.getName().equals(stationName))
+                .findFirst()
+                .map(Station::getCityCode)
+                .orElse("");
     }
 
     /**
@@ -160,7 +194,7 @@ public class StationUtil {
     private static String fetchFromResource() {
         try (InputStream is = StationUtil.class.getResourceAsStream("/data/station_name.js")) {
             if (is == null) {
-                logger.warn("内置车站数据文件不存在: /data/station_name.js");
+                logger.info("内置车站数据文件不存在: /data/station_name.js");
                 return null;
             }
             BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
@@ -178,7 +212,8 @@ public class StationUtil {
 
     /**
      * 解析车站数据字符串
-     * 格式: var station_names ='@bjb|北京北|VAP|beijingbei|bjb|0@bjd|北京东|BOP|beijingdong|bjd|1@...'
+     * 格式: @bjb|北京北|VAP|beijingbei|bjb|0|0357|北京|||@bjd|北京东|BOP|beijingdong|bjd|1|0357|北京|||
+     * 字段: [简码|站名|代码|拼音|简码2|序号|cityCode|cityName]
      */
     static List<Station> parse(String raw) {
         List<Station> list = new ArrayList<>();
@@ -205,9 +240,12 @@ public class StationUtil {
         for (String item : items) {
             if (item.trim().isEmpty()) continue;
             String[] parts = item.split("\\|");
-            if (parts.length >= 4) {
-                // parts: [shortCode, name, code, pinyin, shortCode, index]
-                list.add(new Station(parts[2], parts[1], parts[3], parts[0]));
+            if (parts.length >= 8) {
+                // parts: [shortCode, name, code, pinyin, shortCode2, index, cityCode, cityName]
+                list.add(new Station(parts[2], parts[1], parts[3], parts[0], parts[6], parts[7]));
+            } else if (parts.length >= 5) {
+                // 兼容旧格式：没有 cityCode/cityName 字段
+                list.add(new Station(parts[2], parts[1], parts[3], parts[0], parts[0], ""));
             }
         }
         return list;

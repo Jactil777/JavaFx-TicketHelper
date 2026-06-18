@@ -327,6 +327,13 @@
     -fx-background-color: #ffebee;
 }
 
+/* 查询结果摘要提示 */
+.query-summary {
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #333333;
+}
+
 /* 查询区域 */
 .query-area {
     -fx-background-color: #ffffff;
@@ -397,6 +404,36 @@
 
 .btn-swap:hover {
     -fx-background-color: #bdbdbd;
+}
+
+/* 同城车站筛选按钮 */
+.btn-city-filter {
+    -fx-background-color: white;
+    -fx-text-fill: #1976D2;
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-background-radius: 3;
+    -fx-border-color: #1976D2;
+    -fx-border-radius: 3;
+    -fx-border-width: 1;
+    -fx-padding: 2 4;
+    -fx-pref-height: 28;
+    -fx-pref-width: 24;
+}
+
+.btn-city-filter:hover {
+    -fx-background-color: #e3f2fd;
+}
+
+/* 同城筛选激活状态（有筛选时） */
+.btn-city-filter-active {
+    -fx-background-color: #1976D2;
+    -fx-text-fill: white;
+    -fx-border-color: #1565C0;
+}
+
+.btn-city-filter-active:hover {
+    -fx-background-color: #1565C0;
 }
 
 /* 日期导航按钮 */
@@ -562,6 +599,93 @@
     -fx-border-width: 1 0 0 0;
 }
 
+/* 设置区域三列边框 */
+.settings-panel-border {
+    -fx-border-color: #c0c0c0;
+    -fx-border-width: 1;
+    -fx-border-radius: 3;
+    -fx-background-radius: 3;
+    -fx-background-color: #ffffff;
+    -fx-padding: 4;
+}
+
+/* 设置区域 TitledPane 线框（带标题） */
+.settings-titled-pane {
+    -fx-border-color: #c0c0c0;
+    -fx-border-width: 1;
+    -fx-border-radius: 3;
+    -fx-background-radius: 3;
+    -fx-background-color: #ffffff;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #333333;
+    -fx-padding: 4;
+}
+
+.settings-titled-pane > .title {
+    -fx-background-color: #ffffff;
+    -fx-padding: 0 6 4 6;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+}
+
+.settings-titled-pane > .content {
+    -fx-background-color: #ffffff;
+    -fx-border-color: transparent;
+    -fx-padding: 0;
+}
+
+/* 设置说明文字（灰色） */
+.settings-desc-label {
+    -fx-font-size: 11px;
+    -fx-text-fill: #888888;
+}
+
+.settings-desc-title {
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #555555;
+}
+
+/* 微信二维码占位区域 */
+.qr-placeholder {
+    -fx-border-color: #d0d0d0;
+    -fx-border-width: 1;
+    -fx-border-style: dashed;
+    -fx-border-radius: 4;
+    -fx-background-color: #f8f8f8;
+    -fx-background-radius: 4;
+}
+
+.qr-placeholder-text {
+    -fx-font-size: 12px;
+    -fx-text-fill: #aaaaaa;
+    -fx-alignment: center;
+}
+
+/* 微信绑定状态 */
+.wechat-status {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1976D2;
+}
+
+/* 设置区按钮 */
+.setting-btn {
+    -fx-font-size: 12px;
+    -fx-background-color: #ffffff;
+    -fx-border-color: #c0c0c0;
+    -fx-border-width: 1;
+    -fx-border-radius: 3;
+    -fx-background-radius: 3;
+    -fx-cursor: hand;
+    -fx-padding: 4 12;
+}
+
+.setting-btn:hover {
+    -fx-background-color: #f0f0f0;
+}
+
 .section-title {
     -fx-font-size: 13px;
     -fx-font-weight: bold;
@@ -589,16 +713,36 @@
     -fx-text-fill: white;
 }
 
+/* 设置项 CheckBox */
+.setting-checkbox {
+    -fx-font-size: 12px;
+    -fx-text-fill: #333333;
+}
+
+/* 日志标题栏 */
+.log-title-bar {
+    -fx-border-color: transparent transparent #c0c0c0 transparent;
+    -fx-border-width: 0 0 1 0;
+}
+
 /* 日志输出区 */
 .log-area {
     -fx-font-family: "Consolas", "Microsoft YaHei", monospace;
     -fx-font-size: 12px;
-    -fx-border-color: #cccccc;
+    -fx-background-color: #ffffff;
+    -fx-padding: 6;
+}
+
+.log-scroll-pane {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d0d0d0;
+    -fx-border-width: 1;
     -fx-border-radius: 3;
     -fx-background-radius: 3;
-    -fx-background-color: #1e1e1e;
-    -fx-text-fill: #d4d4d4;
-    -fx-padding: 6;
+}
+
+.log-scroll-pane > .viewport {
+    -fx-background-color: #ffffff;
 }
 
 /* 开始抢票按钮 */
@@ -998,4 +1142,9 @@
     -fx-border-radius: 4;
     -fx-border-color: #cccccc;
     -fx-padding: 4 8;
+}
+
+/* Tooltip 悬浮提示：加快显示速度（默认 1000ms → 200ms） */
+.tooltip {
+    -fx-show-delay: 200ms;
 }

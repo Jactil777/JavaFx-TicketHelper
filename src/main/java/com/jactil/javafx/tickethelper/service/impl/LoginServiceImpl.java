@@ -129,7 +129,7 @@ public class LoginServiceImpl implements LoginService {
 
             // SM4-ECB 加密密码（与 12306 前端 JS 一致）
             String encryptedPassword = Sm4Util.encryptPassword(password);
-            logger.debug("SM4 密码加密完成");
+            logger.info("SM4 密码加密完成");
 
             // 提交登录
             Map<String, String> params = new HashMap<>();
@@ -165,7 +165,7 @@ public class LoginServiceImpl implements LoginService {
                 logger.info("12306 登录成功：{}", userInfo.getRealName());
                 return LoginResult.success(userInfo);
             } else {
-                logger.warn("登录失败：{} (code={})", resultMessage, resultCode);
+                logger.info("登录失败：{} (code={})", resultMessage, resultCode);
                 return LoginResult.fail(resultMessage);
             }
         } catch (Exception e) {
@@ -187,7 +187,7 @@ public class LoginServiceImpl implements LoginService {
             Map<String, String> uamtkParams = new HashMap<>();
             uamtkParams.put("appid", "otn");
             String uamtkResponse = HttpClientUtil.post(UAMTK_URL, uamtkParams);
-            logger.info("uamtk 响应：{}", uamtkResponse);
+            logger.debug("uamtk 响应：{}", uamtkResponse);
 
             JsonNode uamtkRoot = objectMapper.readTree(uamtkResponse);
             String newapptk = uamtkRoot.path("newapptk").asText("");
@@ -198,12 +198,12 @@ public class LoginServiceImpl implements LoginService {
             if (uamtkCode == 0 && !newapptk.isEmpty()) {
                 // uamtk API 成功，使用 newapptk
                 tk = newapptk;
-                logger.info("uamtk API 成功，newapptk={}", tk);
+                logger.debug("uamtk API 成功，newapptk={}", tk);
             } else if (uamtkCode == 4) {
                 // 用户已在他处登录，降级使用登录响应的 uamtk
                 if (loginUamtk != null && !loginUamtk.isEmpty()) {
                     tk = loginUamtk;
-                    logger.info("uamtk 返回“用户已在他处登录”，降级使用登录响应的 uamtk：{}", tk);
+                    logger.debug("uamtk 返回“用户已在他处登录”，降级使用登录响应的 uamtk：{}", tk);
                 } else {
                     logger.warn("uamtk 返回 code=4 且登录响应无 uamtk，跳过 uamauthclient");
                 }
