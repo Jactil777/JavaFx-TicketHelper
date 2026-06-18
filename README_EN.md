@@ -63,9 +63,11 @@
 |:---|:---:|:---|
 | Register 12306 account (embedded browser) | ✅ | JavaFX `WebView` loads `https://kyfw.12306.cn/otn/regist/init` |
 | Forgot password (embedded browser) | ✅ | `WebView` loads `https://kyfw.12306.cn/otn/forgetPassword/init` |
-| Account password login | ✅ | Multi-step: checkLoginVerify → getMessageCode (SMS) → RSA public key encrypt password → submit login with SMS code |
+| Account password login | ✅ | Multi-step: checkLoginVerify → getMessageCode (SMS) → SM4 encrypt password → submit login with SMS code |
 | Phone SMS verification login | ✅ | Simulate web login with phone / SMS code / device info to obtain session Cookie |
 | Open 12306 website without re-login | ✅ | `WebView` loads official site with Cookie/Token pre-injected from OkHttp |
+| Remember password / per-account credentials | ✅ | Each account stores credentials independently in `~/.javafx-tickethelper/accounts/<username>/`; auto-loads last logged-in user on startup |
+| SMS verification popup | ✅ | When login triggers SMS verification, a code input popup appears with countdown timer and cancel support |
 
 ### 2. Core Ticket Booking
 
@@ -74,11 +76,14 @@
 | Ticket booking page (train / date / seat filter) | ✅ | OkHttp queries API → Jackson parses JSON → `TableView` displays → `ComboBox/CheckBox` filters |
 | Adult / Student ticket type toggle | ✅ | Pass `purpose_codes` param (ADULT=adult, 0X00=student); adult/student checkboxes are mutually exclusive |
 | Client-side 3-condition filter (train type / seat / departure time) | ✅ | 12306 returns full data; frontend filters by train prefix letter, seat availability, departure time range in real-time |
-| Query transfer trains | ✅ | Click to launch browser via Selenium with Cookie injection (maintains login), navigate to 12306 transfer page with from/to station and date params |
+| Query transfer trains | ✅ | Click to inject OkHttp cookies into Edge browser via CDP (Chrome DevTools Protocol), opens 12306 transfer page without re-login, with from/to station and date params |
 | Show all prices / restore ticket count toggle | ✅ | Hover shows price tooltip; click parses prices directly from query response (no extra API call), seat columns instantly switch to price display (¥xxx); click again to restore ticket counts |
+| Same-city station filter | ✅ | Based on 12306 `cityCode` field; departure/arrival stations can filter by same-city stations; query results only show trains for selected stations |
+| Query summary hint | ✅ | Shows summary above table after query (N trains total / N with tickets / N without); supports click to open transfer page |
 | Waitlist order page | ✅ | Query waitlist API, display in `TableView`; support pay / cancel / refund actions |
 | Order management (pending / completed) | ✅ | Query order API, tabbed display; support pay / cancel / refund / reschedule actions |
 | Auto-submit order (preset passenger / seat) | ✅ | Store passenger info locally, auto-submit with passenger / seat info when ticket found |
+| Passenger / seat / train selection | ✅ | `ListView` + `CheckBox` for multi-select passengers, seats, and trains; supports select-all linkage |
 | Multi-task booking (single / multi / multi-station) | ✅ | `ThreadPoolExecutor` for concurrent booking, shared login state (Cookie/Token) |
 | CDN speed test / server optimization | ❌ N/A | Personal version uses official domain directly, no CDN optimization needed |
 
@@ -100,9 +105,11 @@
 | Check for updates | ✅ | On startup, request update URL (GitHub Releases / custom server), compare version |
 | Announcements / sponsor author | ✅ | Load local / remote HTML announcements on startup; popup with QR code / donation link |
 | Create desktop shortcut | ✅ | Generate `.lnk` shortcut on Windows pointing to the program `.exe` |
-| Log output / view logs | ✅ | Logback for logging, `TextArea` for real-time display; log directory open button |
+| Log output / view logs | ✅ | Logback for logging; real-time log viewer shows INFO level logs; per-account independent log files; log directory open button |
 | Ticket settings (seat / passenger / auto-waitlist) | ✅ | `CheckBox/ComboBox/TextField` for config, serialized to local JSON, loaded on startup |
-| Auto payment | ⚠️ Risky | Simulates Alipay web payment flow; **recommend "payment reminder" only, not auto-payment** |
+| Email notification settings | ✅ | In-app SMTP server / port / sender / recipient / SSL configuration with test send support |
+| WeChat notification settings | ✅ | In-app ServerChan SendKey / WeCom Webhook configuration with test send support |
+| Auto payment settings | ⚠️ Risky | In-app auto payment mode config (reminder/auto); **recommend "payment reminder" only, not auto-payment** |
 
 ---
 
@@ -212,32 +219,41 @@ gh release create v1.0.0 dist/JavaFx-TicketHelper-1.0.0.msi --title "JavaFx-Tick
 src/main/java/com/jactil/javafx/tickethelper/
 ├── App.java                  # JavaFX Application entry
 ├── Launcher.java             # Launcher proxy class (IDE run entry)
-├── LoginStage.java           # Login window (username/password + login button)
-├── MainStage.java            # Main window (nav bar + tab pane)
+├── LoginStage.java           # Login window (username/password + remember + SMS popup)
+├── MainStage.java            # Main window (nav bar + tabs + booking/log/settings)
+├── component/                # Custom UI components
+│   └── StationAutoCompleteField.java  # Station fuzzy-match autocomplete input
 ├── controller/               # FXML controllers (placeholder)
 │   ├── LoginController.java
 │   └── MainController.java
-├── config/                   # Global configuration
-│   └── AppConfig.java        # Singleton config (language, proxy, etc.)
-├── service/                  # Business service interfaces (placeholder)
+├── config/                   # Configuration management
+│   ├── AppConfig.java        # Global singleton config (language, proxy, last user, etc.)
+│   └── AccountConfig.java    # Per-account config (credentials, station history, city filter)
+├── service/                  # Business service interfaces
 │   ├── LoginService.java     # Login service
-│   ├── TicketService.java    # Ticket booking service
-│   └── NotificationService.java  # Notification service
+│   ├── TicketService.java    # Ticket booking / query service
+│   ├── NotificationService.java  # Notification service
+│   └── impl/                 # Service implementations
+│       ├── LoginServiceImpl.java   # 12306 multi-step login (SM4 encrypt + SMS verify)
+│       └── TicketServiceImpl.java  # Ticket query + local price parsing
 ├── model/                    # Data models
 │   ├── UserInfo.java         # User information
 │   └── TrainInfo.java        # Train information
 └── util/                     # Utility classes
     ├── HttpClientUtil.java   # OkHttp wrapper
+    ├── Sm4Util.java          # SM4 password encryption (matches 12306 frontend JS)
+    ├── StationUtil.java      # Station data management (code / cityCode / same-city)
+    ├── IconGenerator.java    # Application icon generator
     └── TimeUtil.java         # Time utility (with server time sync)
 
 src/main/resources/
 ├── css/
-│   └── style.css             # Global styles
+│   └── style.css             # Global styles (Bypass-style grid / filter / price / log area)
 ├── i18n/
 │   ├── messages_zh_CN.properties  # Chinese language pack
 │   └── messages_en_US.properties  # English language pack
-├── images/                   # Icons, backgrounds (TODO)
-└── logback.xml               # Logging configuration
+├── images/                   # Icons, QR code images
+└── logback.xml               # Logging configuration (per-account independent log files)
 ```
 
 ---
@@ -254,8 +270,8 @@ src/main/resources/
 ## 🔒 Privacy
 
 - All HTTP requests go directly to the **official 12306 API** (`https://kyfw.12306.cn`) — no third-party servers involved
-- User credentials are kept **in memory only** — never persisted to disk
-- Sensitive information is excluded from log files
+- User credentials are stored per-account with encryption in `~/.javafx-tickethelper/accounts/` via the "Remember Password" feature
+- Sensitive information is excluded from log files (sensitive logs downgraded to DEBUG level)
 
 ---
 

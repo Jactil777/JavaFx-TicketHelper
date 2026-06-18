@@ -63,9 +63,11 @@
 |:---|:---:|:---|
 | 注册 12306（弹窗打开网页） | ✅ | JavaFX `WebView` 加载 `https://kyfw.12306.cn/otn/regist/init` 页面 |
 | 忘记密码（弹窗打开网页） | ✅ | `WebView` 加载 `https://kyfw.12306.cn/otn/forgetPassword/init` 页面 |
-| 12306 账号密码登录 | ✅ | 多步验证：checkLoginVerify 检查验证方式 → getMessageCode 发送短信 → RSA 公钥加密密码 → 携带验证码提交登录 |
+| 12306 账号密码登录 | ✅ | 多步验证：checkLoginVerify 检查验证方式 → getMessageCode 发送短信 → SM4 加密密码 → 携带验证码提交登录 |
 | 手机号验证码登录 | ✅ | 模拟网页登录请求，携带手机号 / 验证码 / 设备信息，获取会话 Cookie |
 | 免登录打开 12306 官网 | ✅ | `WebView` 加载官网，OkHttp 预请求获取 Cookie/Token 注入 WebView 实现免登录 |
+| 记住密码 / 分账户凭据管理 | ✅ | 每个账号独立存储凭据到 `~/.javafx-tickethelper/accounts/<username>/`，启动时自动加载上次登录用户 |
+| 短信验证码弹窗 | ✅ | 登录触发短信验证时弹出验证码输入弹窗，支持倒计时与取消操作 |
 
 ### 二、核心抢票功能
 
@@ -74,11 +76,14 @@
 | 抢票页面（车次 / 日期 / 席别筛选） | ✅ | OkHttp 调用余票查询接口 → Jackson 解析 JSON → `TableView` 展示车次 → `ComboBox/CheckBox` 筛选 |
 | 成人 / 学生票切换查询 | ✅ | 查询时传递 `purpose_codes` 参数（ADULT=成人票，0X00=学生票），成人/学生复选框互斥 |
 | 前端三条件筛选（车次类型 / 席别 / 发车时间） | ✅ | 12306 返回全量数据，前端根据车次首字母、席别余票、出发时间段实时过滤，筛选变化即时刷新表格 |
-| 查询中转换乘 | ✅ | 点击后使用 Selenium 启动浏览器并注入 Cookie 保持登录态，打开 12306 中转换乘页面，携带出发站/目的站/日期参数 |
+| 查询中转换乘 | ✅ | 点击后使用 Edge CDP（Chrome DevTools Protocol）注入 OkHttp Cookie 到浏览器，免登录打开 12306 中转换乘页面，携带出发站/目的站/日期参数 |
 | 显示全部票价 / 恢复余票切换 | ✅ | 悬浮显示票价提示 Tooltip；点击后从查询响应中直接解析票价（无需额外API调用），表格席别列即时切换显示票价（¥xxx），再次点击恢复余票数量 |
+| 同城车站筛选 | ✅ | 基于 12306 `cityCode` 字段，出发/到达站均可勾选同城车站过滤，查询结果仅显示选中车站的车次 |
+| 查询摘要提示 | ✅ | 查询后在表格上方显示摘要（共 N 趟车 / 有票 N 趟 / 无票 N 趟），支持点击跳转中转换乘 |
 | 候补订单页面 | ✅ | 调用候补查询接口，`TableView` 展示；支持继续支付 / 取消订单 / 退单操作 |
 | 订单管理页面（未完成 / 已完成） | ✅ | 调用订单查询接口，分标签展示；支持继续支付 / 取消 / 退票 / 改签操作 |
 | 自动提交订单（乘客 / 席别预设） | ✅ | 预存乘客信息到本地配置，查到余票后自动携带乘客 / 席别信息提交下单请求 |
+| 乘客 / 席别 / 已选车次选择 | ✅ | `ListView` + `CheckBox` 多选乘客、席别、车次，支持全选联动 |
 | 多任务抢票（单 / 多任务 / 多站） | ✅ | `ThreadPoolExecutor` 多线程抢票，任务间共享登录态（Cookie/Token） |
 | CDN 测速 / 优选服务器 | ❌ 不做 | 个人版直接固定官方主域名，不做分流 |
 
@@ -100,9 +105,11 @@
 | 检查更新 | ✅ | 启动时请求更新地址（GitHub Releases / 自建服务器），对比版本号提示更新 |
 | 公告 / 赞助作者 | ✅ | 启动时加载本地 / 远程 HTML 公告；弹窗显示赞助二维码 / 链接 |
 | 创建桌面快捷方式 | ✅ | Windows 下生成 `.lnk` 快捷方式，指向程序 `.exe` |
-| 日志输出 / 查找日志 | ✅ | Logback 记录日志，`TextArea` 实时展示；提供日志目录打开按钮 |
+| 日志输出 / 查找日志 | ✅ | Logback 记录日志，实时日志输出区展示 INFO 级别日志；多账号独立日志文件；提供日志目录打开按钮 |
 | 抢票设置（席别 / 乘客 / 自动候补） | ✅ | `CheckBox/ComboBox/TextField` 收集配置，序列化到本地 JSON，启动时加载 |
-| 自动支付 | ⚠️ 有风险 | 模拟支付宝网页支付流程；**建议仅做「提醒支付」，不建议实现自动支付** |
+| 邮件通知设置 | ✅ | 界面内配置 SMTP 服务器 / 端口 / 发件人 / 收件人 / SSL，支持测试发送 |
+| 微信通知设置 | ✅ | 界面内配置 Server酱 SendKey / 企业微信 Webhook，支持测试发送 |
+| 自动支付设置 | ⚠️ 有风险 | 界面内配置自动支付模式（提醒/自动）；**建议仅做「提醒支付」，不建议实现自动支付** |
 
 ---
 
@@ -212,32 +219,41 @@ gh release create v1.0.0 dist/JavaFx-TicketHelper-1.0.0.msi --title "JavaFx-Tick
 src/main/java/com/jactil/javafx/tickethelper/
 ├── App.java                  # JavaFX Application 入口
 ├── Launcher.java             # 启动代理类（IDE 运行入口）
-├── LoginStage.java           # 登录窗口（账号密码 + 登录按钮）
-├── MainStage.java            # 主界面（导航栏 + 标签页）
+├── LoginStage.java           # 登录窗口（账号密码 + 记住密码 + 短信验证码）
+├── MainStage.java            # 主界面（导航栏 + 标签页 + 抢票/日志/设置）
+├── component/                # 自定义 UI 组件
+│   └── StationAutoCompleteField.java  # 车站模糊匹配自动补全输入框
 ├── controller/               # FXML 控制器（占位）
 │   ├── LoginController.java
 │   └── MainController.java
-├── config/                   # 全局配置
-│   └── AppConfig.java        # 单例配置类（语言、代理等）
-├── service/                  # 业务服务接口（占位）
+├── config/                   # 配置管理
+│   ├── AppConfig.java        # 全局单例配置（语言、代理、上次登录用户等）
+│   └── AccountConfig.java    # 分账户配置（凭据、车站历史、同城筛选）
+├── service/                  # 业务服务接口
 │   ├── LoginService.java     # 登录服务
-│   ├── TicketService.java    # 抢票服务
-│   └── NotificationService.java  # 通知服务
+│   ├── TicketService.java    # 抢票 / 查询服务
+│   ├── NotificationService.java  # 通知服务
+│   └── impl/                 # 服务实现
+│       ├── LoginServiceImpl.java   # 12306 多步登录（SM4加密 + 短信验证）
+│       └── TicketServiceImpl.java  # 余票查询 + 票价本地解析
 ├── model/                    # 数据模型
 │   ├── UserInfo.java         # 用户信息
 │   └── TrainInfo.java        # 车次信息
 └── util/                     # 工具类
     ├── HttpClientUtil.java   # OkHttp 封装
+    ├── Sm4Util.java          # SM4 密码加密（与 12306 前端 JS 一致）
+    ├── StationUtil.java      # 车站数据管理（三字码 / cityCode / 同城站）
+    ├── IconGenerator.java    # 应用图标生成
     └── TimeUtil.java         # 时间工具（含服务器时间同步）
 
 src/main/resources/
 ├── css/
-│   └── style.css             # 全局样式
+│   └── style.css             # 全局样式（Bypass 风格网格 / 筛选区 / 票价区 / 日志区）
 ├── i18n/
 │   ├── messages_zh_CN.properties  # 中文语言包
 │   └── messages_en_US.properties  # 英文语言包
-├── images/                   # 图标、背景图片（待添加）
-└── logback.xml               # 日志配置
+├── images/                   # 图标、二维码图片
+└── logback.xml               # 日志配置（多账号独立日志文件）
 ```
 
 ---
@@ -254,8 +270,8 @@ src/main/resources/
 ## 🔒 数据与隐私
 
 - 所有 HTTP 请求直接发往 **12306 官方接口**（`https://kyfw.12306.cn`），不经过任何第三方服务器
-- 用户账号密码仅在内存中使用，**不做本地持久化存储**
-- 日志文件中不记录密码等敏感信息
+- 用户账号密码通过「记住密码」功能分账户加密存储在本地 `~/.javafx-tickethelper/accounts/` 目录
+- 日志文件中不记录密码等敏感信息（敏感日志已降级为 DEBUG 级别）
 
 ---
 
